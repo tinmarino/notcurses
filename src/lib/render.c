@@ -1102,7 +1102,7 @@ home_cursor(notcurses* nc, bool flush){
   return ret;
 }
 
-int notcurses_refresh(notcurses* nc, int* restrict dimy, int* restrict dimx){
+int notcurses_refresh(notcurses* nc, unsigned* restrict dimy, unsigned* restrict dimx){
   if(notcurses_resize(nc, dimy, dimx)){
     return -1;
   }

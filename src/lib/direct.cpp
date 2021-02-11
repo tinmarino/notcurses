@@ -392,7 +392,10 @@ ncdirect_align(const struct ncdirect* n, ncalign_e align, int c){
 static int
 ncdirect_dump_plane(ncdirect* n, const ncplane* np, int xoff){
   const int toty = ncdirect_dim_y(n);
-  int dimy, dimx;
+  if(toty < 0){
+    return -1;
+  }
+  unsigned dimy, dimx;
   ncplane_dim_yx(np, &dimy, &dimx);
 //fprintf(stderr, "rasterizing %dx%d+%d\n", dimy, dimx, xoff);
   // save the existing style and colors
@@ -400,13 +403,13 @@ ncdirect_dump_plane(ncdirect* n, const ncplane* np, int xoff){
   const bool bgdefault = ncdirect_bg_default_p(n);
   const uint32_t fgrgb = channels_fg_rgb(n->channels);
   const uint32_t bgrgb = channels_bg_rgb(n->channels);
-  for(int y = 0 ; y < dimy ; ++y){
+  for(unsigned y = 0 ; y < dimy ; ++y){
     if(xoff){
       if(ncdirect_cursor_move_yx(n, -1, xoff)){
         return -1;
       }
     }
-    for(int x = 0 ; x < dimx ; ++x){
+    for(unsigned x = 0 ; x < dimx ; ++x){
       uint16_t stylemask;
       uint64_t channels;
       char* egc = ncplane_at_yx(np, y, x, &stylemask, &channels);
@@ -490,7 +493,7 @@ ncdirectv* ncdirect_render_frame(ncdirect* n, const char* file,
     ncvisual_destroy(ncv);
     return nullptr;
   }
-  int disprows, dispcols;
+  unsigned disprows, dispcols;
   if(scale != NCSCALE_NONE && scale != NCSCALE_NONE_HIRES){
     dispcols = ncdirect_dim_x(n) * encoding_x_scale(bset);
     disprows = ncdirect_dim_y(n) * encoding_y_scale(bset);

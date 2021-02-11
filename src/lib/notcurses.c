@@ -168,7 +168,7 @@ int ncplane_at_yx_cell(ncplane* n, int y, int x, nccell* c){
   return -1;
 }
 
-void ncplane_dim_yx(const ncplane* n, int* rows, int* cols){
+void ncplane_dim_yx(const ncplane* n, unsigned* rows, unsigned* cols){
   if(rows){
     *rows = n->leny;
   }
@@ -2190,11 +2190,11 @@ int ncplane_resize_maximize(ncplane* n){
   const ncpile* pile = ncplane_pile(n);
   const int rows = pile->dimy;
   const int cols = pile->dimx;
-  int oldy, oldx;
+  unsigned oldy, oldx;
   ncplane_dim_yx(n, &oldy, &oldx); // current dimensions of 'n'
 //fprintf(stderr, "CURRENT: %d/%d TERM: %d/%d\n", oldy, oldx, rows, cols);
-  int keepleny = oldy > rows ? rows : oldy;
-  int keeplenx = oldx > cols ? cols : oldx;
+  unsigned keepleny = oldy > rows ? rows : oldy;
+  unsigned keeplenx = oldx > cols ? cols : oldx;
   return ncplane_resize_internal(n, 0, 0, keepleny, keeplenx, 0, 0, rows, cols);
 }
 

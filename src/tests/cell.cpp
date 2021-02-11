@@ -69,7 +69,7 @@ TEST_CASE("Cell") {
 
   SUBCASE("SetItalic") {
     nccell c = CELL_TRIVIAL_INITIALIZER;
-    int dimy, dimx;
+    unsigned dimy, dimx;
     notcurses_term_dim_yx(nc_, &dimy, &dimx);
     cell_set_styles(&c, NCSTYLE_ITALIC);
     CHECK(1 == cell_load(n_, &c, "i"));
@@ -82,7 +82,7 @@ TEST_CASE("Cell") {
 
   SUBCASE("SetBold") {
     nccell c = CELL_TRIVIAL_INITIALIZER;
-    int dimy, dimx;
+    unsigned dimy, dimx;
     notcurses_term_dim_yx(nc_, &dimy, &dimx);
     cell_set_styles(&c, NCSTYLE_BOLD);
     CHECK(1 == cell_load(n_, &c, "b"));
@@ -95,7 +95,7 @@ TEST_CASE("Cell") {
 
   SUBCASE("SetUnderline") {
     nccell c = CELL_TRIVIAL_INITIALIZER;
-    int dimy, dimx;
+    unsigned dimy, dimx;
     notcurses_term_dim_yx(nc_, &dimy, &dimx);
     cell_set_styles(&c, NCSTYLE_UNDERLINE);
     CHECK(1 == cell_load(n_, &c, "u"));

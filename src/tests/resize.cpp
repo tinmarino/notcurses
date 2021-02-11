@@ -5,7 +5,7 @@ TEST_CASE("Resize") {
   if(!nc_){
     return;
   }
-  int dimy, dimx;
+  unsigned dimy, dimx;
   struct ncplane* n_ = notcurses_stddim_yx(nc_, &dimy, &dimx);
   REQUIRE(n_);
   uint64_t ul, ur, ll, lr;
@@ -21,8 +21,8 @@ TEST_CASE("Resize") {
 
   // start at full size, and shrink to a nothing
   SUBCASE("ResizeShrink") {
-    int y = dimy;
-    int x = dimx;
+    unsigned y = dimy;
+    unsigned x = dimx;
     struct ncplane_options nopts = {
       .y = 0,
       .x = 0,
@@ -45,8 +45,8 @@ TEST_CASE("Resize") {
 
   // start at 1x1, and enlarge to fill the screen
   SUBCASE("ResizeEnlarge") {
-    int y = 2;
-    int x = 2;
+    unsigned y = 2;
+    unsigned x = 2;
     struct ncplane_options nopts = {
       .y = 0,
       .x = 0,

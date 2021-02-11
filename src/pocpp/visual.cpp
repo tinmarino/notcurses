@@ -27,7 +27,7 @@ int main(int argc, char** argv){
   if((nc = notcurses_init(&opts, nullptr)) == nullptr){
     return EXIT_FAILURE;
   }
-  int dimy, dimx;
+  unsigned dimy, dimx;
   struct ncplane* n = ncplane_dup(notcurses_stddim_yx(nc, &dimy, &dimx), nullptr);
   if(!n){
     notcurses_stop(nc);
@@ -69,7 +69,7 @@ int main(int argc, char** argv){
       failed = true;
       break;
     }
-    int vy, vx;
+    unsigned vy, vx;
     ncvisual_geom(nc, ncv, &vopts, &vy, &vx, &scaley, &scalex);
     vopts.x = (dimx - (vx / scalex)) / 2;
     vopts.y = (dimy - (vy / scaley)) / 2;

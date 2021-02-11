@@ -16,7 +16,7 @@ auto main() -> int {
   nopts.flags = NCOPTION_INHIBIT_SETLOCALE | NCOPTION_NO_ALTERNATE_SCREEN;
   NotCurses nc(nopts);
   std::shared_ptr<Plane> n(nc.get_stdplane());
-  int dimx, dimy;
+  unsigned dimx, dimy;
   n->get_dim(&dimy, &dimx);
   Cell c;
   c.set_bg_rgb8(0, 0x80, 0);

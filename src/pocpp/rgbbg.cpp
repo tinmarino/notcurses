@@ -14,7 +14,7 @@ auto main() -> int {
   if(nc == nullptr){
     return EXIT_FAILURE;
   }
-  int y, x, dimy, dimx;
+  unsigned y, x, dimy, dimx;
   struct ncplane* n = notcurses_stdplane(nc);
   ncplane_dim_yx(n, &dimy, &dimx);
   int r , g, b;

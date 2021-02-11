@@ -32,7 +32,7 @@ typedef struct ncmultiselector {
   struct ncmselector_item* items; // items, descriptions, and statuses, heap-copied
   unsigned itemcount;             // number of pairs in 'items'
   char* title;                    // can be NULL, in which case there's no riser
-  int titlecols;                  // columns occupied by title
+  unsigned titlecols;             // columns occupied by title
   char* secondary;                // can be NULL
   int secondarycols;              // columns occupied by secondary
   char* footer;                   // can be NULL
@@ -540,9 +540,9 @@ ncplane* ncmultiselector_plane(ncmultiselector* n){
 }
 
 // ideal body width given the ncselector's items and secondary/footer
-static int
+static unsigned
 ncmultiselector_body_width(const ncmultiselector* n){
-  int cols = 0;
+  unsigned cols = 0;
   // the body is the maximum of
   //  * longop + longdesc + 5
   //  * secondary + 2
@@ -582,12 +582,12 @@ ncmultiselector_draw(ncmultiselector* n){
     ncplane_cursor_move_yx(n->ncp, 1, 0);
     ncplane_hline(n->ncp, &transchar, offx);
   }
-  int bodywidth = ncmultiselector_body_width(n);
-  int dimy, dimx;
+  unsigned bodywidth = ncmultiselector_body_width(n);
+  unsigned dimy, dimx;
   ncplane_dim_yx(n->ncp, &dimy, &dimx);
   int xoff = ncplane_align(n->ncp, NCALIGN_RIGHT, bodywidth);
   if(xoff){
-    for(int y = yoff + 1 ; y < dimy ; ++y){
+    for(unsigned y = yoff + 1 ; y < dimy ; ++y){
       ncplane_cursor_move_yx(n->ncp, y, 0);
       ncplane_hline(n->ncp, &transchar, xoff);
     }
@@ -799,8 +799,8 @@ bool ncmultiselector_offer_input(ncmultiselector* n, const ncinput* nc){
 // the containing plane
 static int
 ncmultiselector_dim_yx(const ncmultiselector* n, int* ncdimy, int* ncdimx){
-  int rows = 0, cols = 0; // desired dimensions
-  int dimy, dimx; // dimensions of containing screen
+  unsigned rows = 0, cols = 0; // desired dimensions
+  unsigned dimy, dimx; // dimensions of containing screen
   ncplane_dim_yx(ncplane_parent(n->ncp), &dimy, &dimx);
   if(n->title){ // header adds two rows for riser
     rows += 2;

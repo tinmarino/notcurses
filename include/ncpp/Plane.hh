@@ -80,7 +80,7 @@ namespace ncpp
 			plane = create_plane (n, rows, cols, yoff, xoff, opaque);
 		}
 
-		explicit Plane (int rows, int cols, int yoff, int xoff, void *opaque = nullptr, NotCurses *ncinst = nullptr)
+		explicit Plane (unsigned rows, unsigned cols, int yoff, int xoff, void *opaque = nullptr, NotCurses *ncinst = nullptr)
 			: Root (ncinst)
 		{
 			ncplane_options nopts = {
@@ -104,13 +104,13 @@ namespace ncpp
 			map_plane (plane, this);
 		}
 
-		explicit Plane (Plane &n, int rows, int cols, int yoff, NCAlign align, void *opaque = nullptr)
+		explicit Plane (Plane &n, unsigned rows, unsigned cols, int yoff, NCAlign align, void *opaque = nullptr)
 			: Root (nullptr)
 		{
 			plane = create_plane (n, rows, cols, yoff, align, opaque);
 		}
 
-		explicit Plane (Plane const& n, int rows, int cols, int yoff, NCAlign align, void *opaque = nullptr)
+		explicit Plane (Plane const& n, unsigned rows, unsigned cols, int yoff, NCAlign align, void *opaque = nullptr)
 			: Root (nullptr)
 		{
 			plane = create_plane (const_cast<Plane&>(n), rows, cols, yoff, align, opaque);
@@ -311,12 +311,12 @@ namespace ncpp
 			return error_guard<int> (ncplane_align (plane, static_cast<ncalign_e>(align), c), INT_MAX);
 		}
 
-		void get_dim (int *rows, int *cols) const noexcept
+		void get_dim (unsigned *rows, unsigned *cols) const noexcept
 		{
 			ncplane_dim_yx (plane, rows, cols);
 		}
 
-		void get_dim (int &rows, int &cols) const noexcept
+		void get_dim (unsigned &rows, unsigned &cols) const noexcept
 		{
 			get_dim (&rows, &cols);
 		}
@@ -1213,7 +1213,7 @@ namespace ncpp
 			return error_guard_cond<bool, bool> (ret, ret);
 		}
 
-		int qrcode (ncblitter_e blitter, int* ymax, int* xmax, const void *data, size_t len) const NOEXCEPT_MAYBE
+		int qrcode (ncblitter_e blitter, unsigned* ymax, unsigned* xmax, const void *data, size_t len) const NOEXCEPT_MAYBE
 		{
 			int ret = ncplane_qrcode (plane, blitter, ymax, xmax, data, len);
 			return error_guard_cond<int> (ret, ret < 0);
@@ -1289,7 +1289,7 @@ namespace ncpp
 		static void unmap_plane (Plane *p) noexcept;
 
 	private:
-		ncplane* create_plane (const Plane &n, int rows, int cols, int yoff, int xoff, void *opaque)
+		ncplane* create_plane (const Plane &n, unsigned rows, unsigned cols, int yoff, int xoff, void *opaque)
 		{
 			ncplane_options nopts = {
 				.y = yoff,
@@ -1304,7 +1304,7 @@ namespace ncpp
 			return create_plane (n, nopts);
 		}
 
-		ncplane* create_plane (Plane &n, int rows, int cols, int yoff, NCAlign align, void *opaque)
+		ncplane* create_plane (Plane &n, unsigned rows, unsigned cols, int yoff, NCAlign align, void *opaque)
 		{
 			ncplane_options nopts = {
 				yoff,

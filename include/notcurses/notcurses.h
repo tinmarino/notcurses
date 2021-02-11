@@ -1057,14 +1057,14 @@ API int notcurses_linesigs_enable(struct notcurses* n);
 // reflecting any changes since the last call to notcurses_render()). This is
 // primarily useful if the screen is externally corrupted, or if an
 // NCKEY_RESIZE event has been read and you're not yet ready to render.
-API int notcurses_refresh(struct notcurses* n, int* RESTRICT y, int* RESTRICT x);
+API int notcurses_refresh(struct notcurses* n, unsigned* RESTRICT y, unsigned* RESTRICT x);
 
 // Extract the Notcurses context to which this plane is attached.
 API struct notcurses* ncplane_notcurses(struct ncplane* n);
 API const struct notcurses* ncplane_notcurses_const(const struct ncplane* n);
 
 // Return the dimensions of this ncplane.
-API void ncplane_dim_yx(const struct ncplane* n, int* RESTRICT y, int* RESTRICT x);
+API void ncplane_dim_yx(const struct ncplane* n, unsigned* RESTRICT y, unsigned* RESTRICT x);
 
 // Get a reference to the standard plane (one matching our current idea of the
 // terminal size) for this terminal. The standard plane always exists, and its
@@ -1074,36 +1074,36 @@ API const struct ncplane* notcurses_stdplane_const(const struct notcurses* nc);
 
 // notcurses_stdplane(), plus free bonus dimensions written to non-NULL y/x!
 static inline struct ncplane*
-notcurses_stddim_yx(struct notcurses* nc, int* RESTRICT y, int* RESTRICT x){
+notcurses_stddim_yx(struct notcurses* nc, unsigned* RESTRICT y, unsigned* RESTRICT x){
   struct ncplane* s = notcurses_stdplane(nc); // can't fail
   ncplane_dim_yx(s, y, x); // accepts NULL
   return s;
 }
 
 static inline const struct ncplane*
-notcurses_stddim_yx_const(const struct notcurses* nc, int* RESTRICT y, int* RESTRICT x){
+notcurses_stddim_yx_const(const struct notcurses* nc, unsigned* RESTRICT y, unsigned* RESTRICT x){
   const struct ncplane* s = notcurses_stdplane_const(nc); // can't fail
   ncplane_dim_yx(s, y, x); // accepts NULL
   return s;
 }
 
-static inline int
+static inline unsigned
 ncplane_dim_y(const struct ncplane* n){
-  int dimy;
+  unsigned dimy;
   ncplane_dim_yx(n, &dimy, NULL);
   return dimy;
 }
 
-static inline int
+static inline unsigned
 ncplane_dim_x(const struct ncplane* n){
-  int dimx;
+  unsigned dimx;
   ncplane_dim_yx(n, NULL, &dimx);
   return dimx;
 }
 
 // Return our current idea of the terminal dimensions in rows and cols.
 static inline void
-notcurses_term_dim_yx(const struct notcurses* n, int* RESTRICT rows, int* RESTRICT cols){
+notcurses_term_dim_yx(const struct notcurses* n, unsigned* RESTRICT rows, unsigned* RESTRICT cols){
   ncplane_dim_yx(notcurses_stdplane_const(n), rows, cols);
 }
 
@@ -1119,8 +1119,8 @@ API char* notcurses_at_yx(struct notcurses* nc, int yoff, int xoff,
 typedef struct ncplane_options {
   int y;            // vertical placement relative to parent plane
   int x;            // horizontal placement relative to parent plane
-  int rows;         // number of rows, must be positive
-  int cols;         // number of columns, must be positive
+  unsigned rows;    // number of rows, must be positive
+  unsigned cols;    // number of columns, must be positive
   void* userptr;    // user curry, may be NULL
   const char* name; // name (used only for debugging), may be NULL
   int (*resizecb)(struct ncplane*); // callback when parent is resized
@@ -1301,11 +1301,11 @@ API int ncplane_resize(struct ncplane* n, int keepy, int keepx, int keepleny,
 // Resize the plane, retaining what data we can (everything, unless we're
 // shrinking in some dimension). Keep the origin where it is.
 static inline int
-ncplane_resize_simple(struct ncplane* n, int ylen, int xlen){
-  int oldy, oldx;
+ncplane_resize_simple(struct ncplane* n, unsigned ylen, unsigned xlen){
+  unsigned oldy, oldx;
   ncplane_dim_yx(n, &oldy, &oldx); // current dimensions of 'n'
-  int keepleny = oldy > ylen ? ylen : oldy;
-  int keeplenx = oldx > xlen ? xlen : oldx;
+  unsigned keepleny = oldy > ylen ? ylen : oldy;
+  unsigned keeplenx = oldx > xlen ? xlen : oldx;
   return ncplane_resize(n, 0, 0, keepleny, keeplenx, 0, 0, ylen, xlen);
 }
 
@@ -1822,7 +1822,7 @@ ncplane_perimeter(struct ncplane* n, const nccell* ul, const nccell* ur,
   if(ncplane_cursor_move_yx(n, 0, 0)){
     return -1;
   }
-  int dimy, dimx;
+  unsigned dimy, dimx;
   ncplane_dim_yx(n, &dimy, &dimx);
   return ncplane_box_sized(n, ul, ur, ll, lr, hline, vline, dimy, dimx, ctlword);
 }
@@ -2280,7 +2280,7 @@ ncplane_perimeter_rounded(struct ncplane* n, uint32_t stylemask,
   if(ncplane_cursor_move_yx(n, 0, 0)){
     return -1;
   }
-  int dimy, dimx;
+  unsigned dimy, dimx;
   ncplane_dim_yx(n, &dimy, &dimx);
   nccell ul = CELL_TRIVIAL_INITIALIZER;
   nccell ur = CELL_TRIVIAL_INITIALIZER;
@@ -2333,7 +2333,7 @@ ncplane_perimeter_double(struct ncplane* n, uint32_t stylemask,
   if(ncplane_cursor_move_yx(n, 0, 0)){
     return -1;
   }
-  int dimy, dimx;
+  unsigned dimy, dimx;
   ncplane_dim_yx(n, &dimy, &dimx);
   nccell ul = CELL_TRIVIAL_INITIALIZER;
   nccell ur = CELL_TRIVIAL_INITIALIZER;
@@ -2429,7 +2429,7 @@ API ALLOC uint32_t* ncplane_rgba(const struct ncplane* n, ncblitter_e blit,
 // for an invalid 'vopts->blitter'. Scaling is taken into consideration.
 API int ncvisual_geom(const struct notcurses* nc, const struct ncvisual* n,
                       const struct ncvisual_options* vopts,
-                      int* y, int* x, int* toy, int* tox);
+                      unsigned* y, unsigned* x, int* toy, int* tox);
 
 // Destroy an ncvisual. Rendered elements will not be disrupted, but the visual
 // can be neither decoded nor rendered any further.
@@ -3295,8 +3295,8 @@ API int ncsubproc_destroy(struct ncsubproc* n);
 // returned. Otherwise, the QR code "version" (size) is returned. The QR code
 // is (version * 4 + 17) columns wide, and ⌈version * 4 + 17⌉ rows tall (the
 // properly-scaled values are written back to '*ymax' and '*xmax').
-API int ncplane_qrcode(struct ncplane* n, ncblitter_e blitter, int* ymax,
-                       int* xmax, const void* data, size_t len);
+API int ncplane_qrcode(struct ncplane* n, ncblitter_e blitter, unsigned* ymax,
+                       unsigned* xmax, const void* data, size_t len);
 
 // Enable horizontal scrolling. Virtual lines can then grow arbitrarily long.
 #define NCREADER_OPTION_HORSCROLL 0x0001ull

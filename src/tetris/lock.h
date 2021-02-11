@@ -1,6 +1,6 @@
 bool LockPiece(){ // returns true if game has ended by reaching level 16
   curpiece_->mergedown_simple(*board_);
-  int bdimy, bdimx;
+  unsigned bdimy, bdimx;
   board_->get_dim(&bdimy, &bdimx);
   int cleared; // how many contiguous lines were cleared
   do{

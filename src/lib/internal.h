@@ -589,12 +589,12 @@ cell_debug(const egcpool* p, const nccell* c){
 
 static inline void
 plane_debug(const ncplane* n, bool details){
-  int dimy, dimx;
+  unsigned dimy, dimx;
   ncplane_dim_yx(n, &dimy, &dimx);
   fprintf(stderr, "p: %p dim: %d/%d poolsize: %d\n", n, dimy, dimx, n->pool.poolsize);
   if(details){
-    for(int y = 0 ; y < 1 ; ++y){
-      for(int x = 0 ; x < 10 ; ++x){
+    for(unsigned y = 0 ; y < 1 ; ++y){
+      for(unsigned x = 0 ; x < 10 ; ++x){
         const nccell* c = &n->fb[fbcellidx(y, dimx, x)];
         fprintf(stderr, "[%03d/%03d] ", y, x);
         cell_debug(&n->pool, c);

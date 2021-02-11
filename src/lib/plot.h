@@ -53,13 +53,13 @@ class ncppplot {
      ncplane_destroy(n);
      return false;
    }
-   int sdimy, sdimx;
+   unsigned sdimy, sdimx;
    ncplane_dim_yx(n, &sdimy, &sdimx);
    if(sdimx <= 0){
      ncplane_destroy(n);
      return false;
    }
-   int dimx = sdimx;
+   unsigned dimx = sdimx;
    if(opts->title){
      ncpp->title = std::string(opts->title);
    }
@@ -117,7 +117,7 @@ class ncppplot {
  auto redraw_plot() -> int {
    ncplane_erase(ncp);
    const int scale = bset->width;
-   int dimy, dimx;
+   unsigned dimy, dimx;
    ncplane_dim_yx(ncp, &dimy, &dimx);
    const int scaleddim = dimx * scale;
    // each transition is worth this much change in value

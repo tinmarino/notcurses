@@ -39,7 +39,7 @@ TEST_CASE("Fade") {
     return;
   }
   REQUIRE(0 == ncplane_cursor_move_yx(n_, 0, 0));
-  int dimy, dimx;
+  unsigned dimy, dimx;
   ncplane_dim_yx(n_, &dimy, &dimx);
   nccell c = CELL_TRIVIAL_INITIALIZER;
   c.gcluster = '*';

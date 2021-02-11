@@ -16,7 +16,7 @@ TEST_CASE("Fills") {
 
   // can't polyfill with a null glyph
   SUBCASE("PolyfillNullGlyph") {
-    int dimx, dimy;
+    unsigned dimx, dimy;
     ncplane_dim_yx(n_, &dimy, &dimx);
     nccell c = CELL_TRIVIAL_INITIALIZER;
     CHECK(0 > ncplane_polyfill_yx(n_, dimy, dimx, &c));
@@ -24,7 +24,7 @@ TEST_CASE("Fills") {
 
   // trying to polyfill an invalid cell ought be an error
   SUBCASE("PolyfillOffplane") {
-    int dimx, dimy;
+    unsigned dimx, dimy;
     ncplane_dim_yx(n_, &dimy, &dimx);
     nccell c = CELL_CHAR_INITIALIZER('+');
     CHECK(0 > ncplane_polyfill_yx(n_, dimy, 0, &c));
@@ -113,7 +113,7 @@ TEST_CASE("Fills") {
     uint64_t c = 0;
     channels_set_fg_rgb(&c, 0x40f040);
     channels_set_bg_rgb(&c, 0x40f040);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(n_, &dimy, &dimx);
     REQUIRE(0 < ncplane_gradient_sized(n_, "M", 0, c, c, c, c, dimy, dimx));
     nccell cl = CELL_TRIVIAL_INITIALIZER;
@@ -143,7 +143,7 @@ TEST_CASE("Fills") {
     channels_set_bg_rgb(&ur, 0x40f040);
     channels_set_fg_rgb(&lr, 0xf040f0);
     channels_set_bg_rgb(&lr, 0xf040f0);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(n_, &dimy, &dimx);
     REQUIRE(0 < ncplane_gradient_sized(n_, "V", 0, ul, ur, ll, lr, dimy, dimx));
     nccell c = CELL_TRIVIAL_INITIALIZER;
@@ -194,7 +194,7 @@ TEST_CASE("Fills") {
     channels_set_bg_rgb(&ll, 0x40f040);
     channels_set_fg_rgb(&lr, 0xf040f0);
     channels_set_bg_rgb(&lr, 0xf040f0);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(n_, &dimy, &dimx);
     REQUIRE(0 < ncplane_gradient_sized(n_, "H", 0, ul, ur, ll, lr, dimy, dimx));
     // check corners FIXME
@@ -212,7 +212,7 @@ TEST_CASE("Fills") {
     channels_set_bg_rgb(&ur, 0xf040f0);
     channels_set_fg_rgb(&lr, 0xffffff);
     channels_set_bg_rgb(&lr, 0x000000);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(n_, &dimy, &dimx);
     REQUIRE(0 < ncplane_gradient_sized(n_, "X", 0, ul, ur, ll, lr, dimy, dimx));
     // check corners FIXME
@@ -230,7 +230,7 @@ TEST_CASE("Fills") {
     channels_set_bg_rgb(&ll, 0xff0000);
     channels_set_fg_rgb(&ur, 0xff00ff);
     channels_set_bg_rgb(&ur, 0x00ff00);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(n_, &dimy, &dimx);
     REQUIRE(0 < ncplane_gradient_sized(n_, "S", 0, ul, ur, ll, lr, dimy, dimx));
     // check corners FIXME
@@ -337,7 +337,7 @@ TEST_CASE("Fills") {
     channel_set(&lr, 0x000000);
     channel_set(&ll, 0x00ffff);
     channel_set(&ur, 0xff00ff);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(n_, &dimy, &dimx);
     REQUIRE(0 < ncplane_highgradient_sized(n_, ul, ur, ll, lr, dimy, dimx));
     CHECK(0 == notcurses_render(nc_));
@@ -350,7 +350,7 @@ TEST_CASE("Fills") {
     channel_set(&lr, 0x000000);
     channel_set(&ll, 0x00ffff);
     channel_set(&ur, 0xff00ff);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(n_, &dimy, &dimx);
     REQUIRE(0 < ncplane_highgradient_sized(n_, ul, ur, ll, lr, dimy, dimx));
     CHECK(0 == notcurses_render(nc_));
@@ -571,7 +571,7 @@ TEST_CASE("Fills") {
 #ifdef USE_QRCODEGEN
   SUBCASE("QRCodes") {
     const char* qr = "a very simple qr code";
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(n_, &dimy, &dimx);
     CHECK(0 < ncplane_qrcode(n_, NCBLIT_DEFAULT, &dimy, &dimx, qr, strlen(qr)));
     CHECK(0 == notcurses_render(nc_));

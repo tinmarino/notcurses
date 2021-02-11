@@ -18,7 +18,7 @@ TEST_CASE("NotcursesBase") {
   }
 
   SUBCASE("TermDimensions") {
-    int x, y;
+    unsigned x, y;
     notcurses_term_dim_yx(nc_, &y, &x);
     auto stry = getenv("LINES");
     if(stry){
@@ -33,9 +33,9 @@ TEST_CASE("NotcursesBase") {
   }
 
   SUBCASE("RefreshSameSize") {
-    int x, y;
+    unsigned x, y;
     notcurses_term_dim_yx(nc_, &y, &x);
-    int newx, newy;
+    unsigned newx, newy;
     CHECK(0 == notcurses_refresh(nc_, &newy, &newx));
     CHECK(newx == x);
     CHECK(newy == y);
@@ -63,7 +63,7 @@ TEST_CASE("NotcursesBase") {
 
   // create planes partitioning the entirety of the screen, one at each coordinate
   SUBCASE("TileScreenWithPlanes") {
-    int maxx, maxy;
+    unsigned maxx, maxy;
     notcurses_term_dim_yx(nc_, &maxy, &maxx);
     auto total = maxx * maxy;
     auto planes = new struct ncplane*[total];

@@ -20,7 +20,7 @@ TEST_CASE("Visual") {
   }
 
   SUBCASE("LoadImageCreatePlane") {
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(ncp_, &dimy, &dimx);
     auto ncv = ncvisual_from_file(find_data("changes.jpg"));
     REQUIRE(ncv);
@@ -37,7 +37,7 @@ TEST_CASE("Visual") {
   }
 
   SUBCASE("LoadImage") {
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(ncp_, &dimy, &dimx);
     auto ncv = ncvisual_from_file(find_data("changes.jpg"));
     REQUIRE(ncv);
@@ -53,7 +53,7 @@ TEST_CASE("Visual") {
   }
 
   SUBCASE("PlaneDuplicate") {
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(ncp_, &dimy, &dimx);
     auto ncv = ncvisual_from_file(find_data("changes.jpg"));
     REQUIRE(ncv);
@@ -66,7 +66,7 @@ TEST_CASE("Visual") {
     void* needle = malloc(1);
     REQUIRE(nullptr != needle);
     struct ncplane* newn = ncplane_dup(ncp_, needle);
-    int ndimx, ndimy;
+    unsigned ndimx, ndimy;
     REQUIRE(nullptr != newn);
     ncvisual_destroy(ncv);
     ncplane_erase(ncp_);
@@ -79,7 +79,7 @@ TEST_CASE("Visual") {
 
   SUBCASE("LoadVideoASCII") {
     if(notcurses_canopen_videos(nc_)){
-      int dimy, dimx;
+      unsigned dimy, dimx;
       ncplane_dim_yx(ncp_, &dimy, &dimx);
       auto ncv = ncvisual_from_file(find_data("notcursesII.mkv"));
       REQUIRE(ncv);
@@ -102,7 +102,7 @@ TEST_CASE("Visual") {
 
   SUBCASE("LoadVideoHalfblocks") {
     if(notcurses_canopen_videos(nc_)){
-      int dimy, dimx;
+      unsigned dimy, dimx;
       ncplane_dim_yx(ncp_, &dimy, &dimx);
       auto ncv = ncvisual_from_file(find_data("notcursesII.mkv"));
       REQUIRE(ncv);
@@ -126,7 +126,7 @@ TEST_CASE("Visual") {
   // quadblitter is default for NCSCALE_STRETCH
   SUBCASE("LoadVideoQuadblitter") {
     if(notcurses_canopen_videos(nc_)){
-      int dimy, dimx;
+      unsigned dimy, dimx;
       ncplane_dim_yx(ncp_, &dimy, &dimx);
       auto ncv = ncvisual_from_file(find_data("notcursesII.mkv"));
       REQUIRE(ncv);
@@ -149,7 +149,7 @@ TEST_CASE("Visual") {
 
   SUBCASE("LoadVideoSexblitter") {
     if(notcurses_canopen_videos(nc_)){
-      int dimy, dimx;
+      unsigned dimy, dimx;
       ncplane_dim_yx(ncp_, &dimy, &dimx);
       auto ncv = ncvisual_from_file(find_data("notcursesII.mkv"));
       REQUIRE(ncv);
@@ -172,7 +172,7 @@ TEST_CASE("Visual") {
 
   SUBCASE("LoadVideoBraille") {
     if(notcurses_canopen_videos(nc_)){
-      int dimy, dimx;
+      unsigned dimy, dimx;
       ncplane_dim_yx(ncp_, &dimy, &dimx);
       auto ncv = ncvisual_from_file(find_data("notcursesII.mkv"));
       REQUIRE(ncv);
@@ -195,7 +195,7 @@ TEST_CASE("Visual") {
 
   SUBCASE("LoopVideo") {
     if(notcurses_canopen_videos(nc_)){
-      int dimy, dimx;
+      unsigned dimy, dimx;
       ncplane_dim_yx(ncp_, &dimy, &dimx);
       auto ncv = ncvisual_from_file(find_data("notcursesII.mkv"));
       REQUIRE(ncv);
@@ -222,7 +222,7 @@ TEST_CASE("Visual") {
 
   SUBCASE("LoadVideoCreatePlane") {
     if(notcurses_canopen_videos(nc_)){
-      int dimy, dimx;
+      unsigned dimy, dimx;
       ncplane_dim_yx(ncp_, &dimy, &dimx);
       auto ncv = ncvisual_from_file(find_data("notcursesII.mkv"));
       REQUIRE(ncv);
@@ -241,7 +241,7 @@ TEST_CASE("Visual") {
 #endif
 
   SUBCASE("LoadRGBAFromMemory") {
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(ncp_, &dimy, &dimx);
     std::vector<uint32_t> rgba(dimx * dimy * 2, 0xff88bbcc);
     auto ncv = ncvisual_from_rgba(rgba.data(), dimy * 2, dimx * 4, dimx);
@@ -256,7 +256,7 @@ TEST_CASE("Visual") {
   }
 
   SUBCASE("LoadBGRAFromMemory") {
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(ncp_, &dimy, &dimx);
     std::vector<uint32_t> rgba(dimx * dimy * 2, 0xff88bbcc);
     auto ncv = ncvisual_from_bgra(rgba.data(), dimy * 2, dimx * 4, dimx);
@@ -444,7 +444,7 @@ TEST_CASE("Visual") {
       };
       auto ncvp = ncvisual_render(nc_, ncv, &vopts);
       REQUIRE(nullptr != ncvp);
-      int dimy, dimx;
+      unsigned dimy, dimx;
       ncplane_dim_yx(ncvp, &dimy, &dimx);
       CHECK(1 == dimy);
       CHECK(1 == dimx);
@@ -486,7 +486,7 @@ TEST_CASE("Visual") {
         };
         auto ncvp = ncvisual_render(nc_, ncv, &vopts);
         REQUIRE(nullptr != ncvp);
-        int dimy, dimx;
+        unsigned dimy, dimx;
         ncplane_dim_yx(ncvp, &dimy, &dimx);
         CHECK(1 == dimy);
         CHECK(1 == dimx);
@@ -531,7 +531,7 @@ TEST_CASE("Visual") {
         };
         auto ncvp = ncvisual_render(nc_, ncv, &vopts);
         REQUIRE(nullptr != ncvp);
-        int dimy, dimx;
+        unsigned dimy, dimx;
         ncplane_dim_yx(ncvp, &dimy, &dimx);
         CHECK(1 == dimy);
         CHECK(1 == dimx);
@@ -581,7 +581,7 @@ TEST_CASE("Visual") {
         };
         auto ncvp = ncvisual_render(nc_, ncv, &vopts);
         REQUIRE(nullptr != ncvp);
-        int dimy, dimx;
+        unsigned dimy, dimx;
         ncplane_dim_yx(ncvp, &dimy, &dimx);
         CHECK(1 == dimy);
         CHECK(1 == dimx);
@@ -630,7 +630,7 @@ TEST_CASE("Visual") {
         };
         auto ncvp = ncvisual_render(nc_, ncv, &vopts);
         REQUIRE(nullptr != ncvp);
-        int dimy, dimx;
+        unsigned dimy, dimx;
         ncplane_dim_yx(ncvp, &dimy, &dimx);
         CHECK(1 == dimy);
         CHECK(1 == dimx);

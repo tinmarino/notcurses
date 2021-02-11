@@ -33,7 +33,7 @@ TEST_CASE("Wide") {
   SUBCASE("RejectWideAsian") {
     const char* w = "\u5168";
     int sbytes = 0;
-    int dimx;
+    unsigned dimx;
     ncplane_dim_yx(n_, nullptr, &dimx);
     CHECK(0 < ncplane_putegc_yx(n_, 0, dimx - 3, w, &sbytes));
     int x, y;
@@ -53,7 +53,7 @@ TEST_CASE("Wide") {
   SUBCASE("RejectWideAsianPlaced") {
     const char* w = "\u5168";
     int sbytes = 0;
-    int dimx;
+    unsigned dimx;
     ncplane_dim_yx(n_, nullptr, &dimx);
     // now it ought be rejected
     CHECK(0 > ncplane_putegc_yx(n_, 0, dimx - 1, w, &sbytes));
@@ -233,7 +233,7 @@ TEST_CASE("Wide") {
     };
     struct ncplane* ncp = ncplane_create(n_, &nopts);
     REQUIRE(ncp);
-    int dimx, dimy;
+    unsigned dimx, dimy;
     ncplane_dim_yx(n_, &dimy, &dimx);
     CHECK(0 == ncplane_rounded_box_sized(ncp, 0, 0, 3, 4, 0));
     CHECK(ncstrwidth(SCORPION) == ncplane_putegc_yx(ncp, 1, 1, SCORPION, nullptr));

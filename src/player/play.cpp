@@ -71,7 +71,7 @@ auto perframe(struct ncvisual* ncv, struct ncvisual_options* vopts,
   char* subtitle = ncvisual_subtitle(ncv);
   if(subtitle){
     if(!marsh->subtitle_plane){
-      int dimx, dimy;
+      unsigned dimx, dimy;
       ncplane_dim_yx(vopts->n, &dimy, &dimx);
       struct ncplane_options nopts = {
         .y = dimy - 1,
@@ -110,7 +110,7 @@ auto perframe(struct ncvisual* ncv, struct ncvisual_options* vopts,
   if(!nc.render()){
     return -1;
   }
-  int dimx, dimy, oldx, oldy;
+  unsigned dimx, dimy, oldx, oldy;
   nc.get_term_dim(&dimy, &dimx);
   ncplane_dim_yx(vopts->n, &oldy, &oldx);
   uint64_t absnow = timespec_to_ns(abstime);
@@ -282,7 +282,7 @@ auto main(int argc, char** argv) -> int {
     std::cerr << "Notcurses was compiled without multimedia support\n";
     return EXIT_FAILURE;
   }
-  int dimy, dimx;
+  unsigned dimy, dimx;
   bool failed = false;
   {
     std::unique_ptr<Plane> stdn(nc.get_stdplane(&dimy, &dimx));

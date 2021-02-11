@@ -3,7 +3,7 @@
 #include "internal.h"
 
 void BoxPermutationsRounded(struct notcurses* nc, struct ncplane* n, unsigned edges) {
-  int dimx, dimy;
+  unsigned dimx, dimy;
   ncplane_dim_yx(n, &dimy, &dimx);
   REQUIRE(2 < dimy);
   REQUIRE(47 < dimx);
@@ -39,9 +39,9 @@ TEST_CASE("Plane") {
 
   // Dimensions of the standard plane ought be the same as those of the context
   SUBCASE("StdPlaneDimensions") {
-    int cols, rows;
+    unsigned cols, rows;
     notcurses_term_dim_yx(nc_, &rows, &cols);
-    int ncols, nrows;
+    unsigned ncols, nrows;
     ncplane_dim_yx(n_, &nrows, &ncols);
     CHECK(rows == nrows);
     CHECK(cols == ncols);
@@ -49,7 +49,7 @@ TEST_CASE("Plane") {
 
   // Verify that we can move to all four coordinates of the standard plane
   SUBCASE("MoveStdPlaneDimensions") {
-    int cols, rows;
+    unsigned cols, rows;
     notcurses_term_dim_yx(nc_, &rows, &cols);
     CHECK(0 == ncplane_cursor_move_yx(n_, 0, 0));
     int x, y;
@@ -72,7 +72,7 @@ TEST_CASE("Plane") {
 
   // Verify that we can move to all four coordinates of the standard plane
   SUBCASE("MoveBeyondPlaneFails") {
-    int cols, rows;
+    unsigned cols, rows;
     notcurses_term_dim_yx(nc_, &rows, &cols);
     CHECK(0 > ncplane_cursor_move_yx(n_, -2, 0));
     CHECK(0 > ncplane_cursor_move_yx(n_, -2, -2));
@@ -169,13 +169,13 @@ TEST_CASE("Plane") {
   }
 
   SUBCASE("HorizontalLines") {
-    int x, y;
+    unsigned x, y;
     ncplane_dim_yx(n_, &y, &x);
     REQUIRE(0 < y);
     REQUIRE(0 < x);
     nccell c{};
     cell_load(n_, &c, "-");
-    for(int yidx = 0 ; yidx < y ; ++yidx){
+    for(unsigned yidx = 0 ; yidx < y ; ++yidx){
       CHECK(0 == ncplane_cursor_move_yx(n_, yidx, 1));
       CHECK(x - 2 == ncplane_hline(n_, &c, x - 2));
       int posx, posy;
@@ -188,13 +188,13 @@ TEST_CASE("Plane") {
   }
 
   SUBCASE("VerticalLines") {
-    int x, y;
+    unsigned x, y;
     ncplane_dim_yx(n_, &y, &x);
     REQUIRE(0 < y);
     REQUIRE(0 < x);
     nccell c{};
     cell_load(n_, &c, "|");
-    for(int xidx = 1 ; xidx < x - 1 ; ++xidx){
+    for(unsigned xidx = 1 ; xidx < x - 1 ; ++xidx){
       CHECK(0 == ncplane_cursor_move_yx(n_, 1, xidx));
       CHECK(y - 2 == ncplane_vline(n_, &c, y - 2));
       int posx, posy;
@@ -208,7 +208,7 @@ TEST_CASE("Plane") {
 
   // reject attempts to draw boxes beyond the boundaries of the ncplane
   SUBCASE("BadlyPlacedBoxen") {
-    int x, y;
+    unsigned x, y;
     ncplane_dim_yx(n_, &y, &x);
     REQUIRE(2 < y);
     REQUIRE(2 < x);
@@ -245,7 +245,7 @@ TEST_CASE("Plane") {
   }
 
   SUBCASE("BoxPermutationsDouble") {
-    int dimx, dimy;
+    unsigned dimx, dimy;
     ncplane_dim_yx(n_, &dimy, &dimx);
     REQUIRE(2 < dimx);
     REQUIRE(47 < dimx);
@@ -260,7 +260,7 @@ TEST_CASE("Plane") {
   }
 
   SUBCASE("PerimeterRoundedBox") {
-    int x, y;
+    unsigned x, y;
     ncplane_dim_yx(n_, &y, &x);
     REQUIRE(2 < y);
     REQUIRE(2 < x);
@@ -270,7 +270,7 @@ TEST_CASE("Plane") {
   }
 
   SUBCASE("PerimeterRoundedBoxSized") {
-    int x, y;
+    unsigned x, y;
     ncplane_dim_yx(n_, &y, &x);
     REQUIRE(2 < y);
     REQUIRE(2 < x);
@@ -280,7 +280,7 @@ TEST_CASE("Plane") {
   }
 
   SUBCASE("PerimeterDoubleBox") {
-    int x, y;
+    unsigned x, y;
     ncplane_dim_yx(n_, &y, &x);
     REQUIRE(2 < y);
     REQUIRE(2 < x);
@@ -290,7 +290,7 @@ TEST_CASE("Plane") {
   }
 
   SUBCASE("PerimeterDoubleBoxSized") {
-    int x, y;
+    unsigned x, y;
     ncplane_dim_yx(n_, &y, &x);
     REQUIRE(2 < y);
     REQUIRE(2 < x);
@@ -372,7 +372,7 @@ TEST_CASE("Plane") {
   // for the standard plane, and that we can change it.
   SUBCASE("UserPtr") {
     CHECK(nullptr == ncplane_userptr(n_));
-    int x, y;
+    unsigned x, y;
     void* sentinel = &x;
     notcurses_term_dim_yx(nc_, &y, &x);
     struct ncplane_options nopts = {
@@ -397,7 +397,7 @@ TEST_CASE("Plane") {
   // create a new plane, the same size as the terminal, and verify that it
   // occupies the same dimensions as the standard plane.
   SUBCASE("NewPlaneSameSize") {
-    int x, y;
+    unsigned x, y;
     notcurses_term_dim_yx(nc_, &y, &x);
     struct ncplane_options nopts = {
       .y = 0,
@@ -408,11 +408,11 @@ TEST_CASE("Plane") {
     };
     struct ncplane* ncp = ncplane_create(n_, &nopts);
     REQUIRE(ncp);
-    int px, py;
+    unsigned px, py;
     ncplane_dim_yx(ncp, &py, &px);
     CHECK(y == py);
     CHECK(x == px);
-    int sx, sy;
+    unsigned sx, sy;
     ncplane_dim_yx(n_, &sy, &sx);
     CHECK(sy == py);
     CHECK(sx == px);
@@ -422,7 +422,7 @@ TEST_CASE("Plane") {
   // create a new plane, the same size as the terminal, and verify that it
   // occupies the same dimensions as the standard plane, but on another pile.
   SUBCASE("NewPileSameSize") {
-    int x, y;
+    unsigned x, y;
     notcurses_term_dim_yx(nc_, &y, &x);
     struct ncplane_options nopts = {
       .y = 0,
@@ -433,11 +433,11 @@ TEST_CASE("Plane") {
     };
     struct ncplane* ncp = ncpile_create(nc_, &nopts);
     REQUIRE(ncp);
-    int px, py;
+    unsigned px, py;
     ncplane_dim_yx(ncp, &py, &px);
     CHECK(y == py);
     CHECK(x == px);
-    int sx, sy;
+    unsigned sx, sy;
     ncplane_dim_yx(n_, &sy, &sx);
     CHECK(sy == py);
     CHECK(sx == px);
@@ -452,7 +452,7 @@ TEST_CASE("Plane") {
   }
 
   SUBCASE("ShrinkPlane") {
-    int maxx, maxy;
+    unsigned maxx, maxy;
     int x = 0, y = 0;
     notcurses_term_dim_yx(nc_, &maxy, &maxx);
     struct ncplane_options nopts = {
@@ -495,9 +495,9 @@ TEST_CASE("Plane") {
   }
 
   SUBCASE("GrowPlane") {
-    int maxx = 2, maxy = 2;
+    unsigned maxx = 2, maxy = 2;
     int x = 0, y = 0;
-    int dimy, dimx;
+    unsigned dimy, dimx;
     notcurses_term_dim_yx(nc_, &dimy, &dimx);
     x = dimx / 2 - 1;
     y = dimy / 2 - 1;
@@ -518,7 +518,7 @@ TEST_CASE("Plane") {
       REQUIRE(0 == ncplane_resize(newp, 1, 1, maxy - 3, maxx - 3, 1, 1, maxy, maxx));
       // FIXME check dims, pos
     }
-    while(y < dimy){
+    while(y < static_cast<int>(dimy)){
       ++maxy;
       if(y){
         ++y;
@@ -526,7 +526,7 @@ TEST_CASE("Plane") {
       REQUIRE(0 == ncplane_resize(newp, 1, 0, maxy - 2, maxx, 1, 0, maxy, maxx));
       // FIXME check dims, pos
     }
-    while(x < dimx){
+    while(x < static_cast<int>(dimx)){
       ++maxx;
       if(x){
         ++x;
@@ -554,7 +554,7 @@ TEST_CASE("Plane") {
     CHECK(0 == testcell.stylemask);
     CHECK(0 == testcell.channels);
     cell_release(n_, &testcell);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(n_, &dimy, &dimx);
     REQUIRE(0 == ncplane_cursor_move_yx(n_, 1, dimx - strlen(STR2)));
     REQUIRE(0 < ncplane_putstr(n_, STR2));
@@ -592,7 +592,7 @@ TEST_CASE("Plane") {
     CHECK(0 == testcell.stylemask);
     CHECK(0 == testcell.channels);
     cell_release(n_, &testcell);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(n_, &dimy, &dimx);
     REQUIRE(0 == ncplane_cursor_move_yx(n_, 1, dimx - mbstowcs(nullptr, STR2, 0)));
     REQUIRE(0 < ncplane_putstr(n_, STR2));
@@ -650,7 +650,7 @@ TEST_CASE("Plane") {
 
   SUBCASE("BoxGradients") {
     const auto sidesz = 5;
-    int dimx, dimy;
+    unsigned dimx, dimy;
     ncplane_dim_yx(n_, &dimy, &dimx);
     REQUIRE(20 < dimy);
     REQUIRE(40 < dimx);
@@ -688,7 +688,7 @@ TEST_CASE("Plane") {
 
   SUBCASE("BoxSideColors") {
     const auto sidesz = 5;
-    int dimx, dimy;
+    unsigned dimx, dimy;
     ncplane_dim_yx(n_, &dimy, &dimx);
     REQUIRE(20 < dimy);
     REQUIRE(40 < dimx);
@@ -740,14 +740,14 @@ TEST_CASE("Plane") {
   }
 
   SUBCASE("NewPlaneOnRight") {
-    int ncols, nrows;
+    unsigned ncols, nrows;
     ncplane_dim_yx(n_, &nrows, &ncols);
     nccell ul{}, ll{}, lr{}, ur{}, hl{}, vl{};
     int y, x;
     ncplane_yx(n_, &y, &x);
     struct ncplane_options nopts = {
       .y = y,
-      .x = ncols - 3,
+      .x = static_cast<int>(ncols) - 3,
       .rows = 2,
       .cols = 2,
       .userptr = nullptr, .name = nullptr, .resizecb = nullptr, .flags = 0,
@@ -762,7 +762,7 @@ TEST_CASE("Plane") {
   }
 
   SUBCASE("MoveToLowerRight") {
-    int ncols, nrows;
+    unsigned ncols, nrows;
     ncplane_dim_yx(n_, &nrows, &ncols);
     nccell ul{}, ll{}, lr{}, ur{}, hl{}, vl{};
     int y, x;
@@ -819,7 +819,7 @@ TEST_CASE("Plane") {
   }
 
   SUBCASE("MouseEvent") {
-    int dimy, dimx;
+    unsigned dimy, dimx;
     notcurses_stddim_yx(nc_, &dimy, &dimx);
     struct ncplane_options nopts = {
       .y = 1,

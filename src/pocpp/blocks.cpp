@@ -15,7 +15,7 @@ auto main() -> int {
   NotCurses nc(nopts);
   {
     std::unique_ptr<Plane> n (nc.get_stdplane());
-    int dimx, dimy;
+    unsigned dimx, dimy;
     nc.get_term_dim(&dimy, &dimx);
 
     const int HEIGHT = 5;

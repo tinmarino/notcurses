@@ -70,7 +70,7 @@ auto ncvisual_printbanner(const notcurses* nc) -> void {
 
 auto ncvisual_geom(const notcurses* nc, const ncvisual* n,
                    const struct ncvisual_options* vopts,
-                   int* y, int* x, int* toy, int* tox) -> int {
+                   unsigned* y, unsigned* x, int* toy, int* tox) -> int {
   const ncscale_e scale = vopts ? vopts->scaling : NCSCALE_NONE;
   ncblitter_e blitter;
   if(!vopts || vopts->blitter == NCBLIT_DEFAULT){
@@ -83,7 +83,7 @@ auto ncvisual_geom(const notcurses* nc, const ncvisual* n,
   if(!bset){
     return -1;
   }
-  int fauxy, fauxx;
+  unsigned fauxy, fauxx;
   if(!y){
     y = &fauxy;
   }
@@ -460,7 +460,7 @@ auto ncvisual_render(notcurses* nc, ncvisual* ncv,
 //fprintf(stderr, "beg/len: %d %d %d %d scale: %d/%d\n", begy, leny, begx, lenx, encoding_y_scale(bset), encoding_x_scale(bset));
   int placey = vopts ? vopts->y : 0;
   int placex = vopts ? vopts->x : 0;
-  int disprows, dispcols;
+  unsigned disprows, dispcols;
   ncplane* n = nullptr;
 //fprintf(stderr, "INPUT N: %p\n", vopts ? vopts->n : nullptr);
   if((n = (vopts ? vopts->n : nullptr)) == nullptr){ // create plane
@@ -526,7 +526,7 @@ auto ncvisual_from_plane(const ncplane* n, ncblitter_e blit, int begy, int begx,
   if(rgba == nullptr){
     return nullptr;
   }
-  int dimy, dimx;
+  unsigned dimy, dimx;
   ncplane_dim_yx(n, &dimy, &dimx);
   if(lenx == -1){
     lenx = n->lenx - begx;

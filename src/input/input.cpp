@@ -27,7 +27,7 @@ using namespace ncpp;
 
 std::mutex mtx;
 uint64_t start;
-static int dimy, dimx;
+static unsigned dimy, dimx;
 std::atomic<bool> done;
 static struct ncuplot* plot;
 
@@ -152,7 +152,7 @@ char32_t printutf8(char32_t kp){
 // older text, and thus clearly indicate the current output.
 static bool
 dim_rows(const Plane* n){
-  int y, x;
+  unsigned y, x;
   Cell c;
   for(y = 2 ; y < dimy ; ++y){
     for(x = 0 ; x < dimx ; ++x){

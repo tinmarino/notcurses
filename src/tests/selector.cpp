@@ -27,7 +27,7 @@ TEST_CASE("Selectors") {
     CHECK(nullptr == ncselector_selected(ncs));
     struct ncplane* ncsp = ncselector_plane(ncs);
     REQUIRE(nullptr != ncsp);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(ncsp, &dimy, &dimx);
     CHECK(4 == dimy);
     CHECK(5 == dimx);
@@ -50,7 +50,7 @@ TEST_CASE("Selectors") {
     CHECK(0 == notcurses_render(nc_));
     struct ncplane* ncsp = ncselector_plane(ncs);
     REQUIRE(nullptr != ncsp);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(ncsp, &dimy, &dimx);
     CHECK(6 == dimy);
     CHECK(strlen(opts.title) + 4 == dimx);
@@ -73,7 +73,7 @@ TEST_CASE("Selectors") {
     CHECK(0 == notcurses_render(nc_));
     struct ncplane* ncsp = ncselector_plane(ncs);
     REQUIRE(nullptr != ncsp);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(ncsp, &dimy, &dimx);
     CHECK(4 == dimy);
     CHECK(strlen(opts.secondary) + 2 == dimx);
@@ -96,7 +96,7 @@ TEST_CASE("Selectors") {
     CHECK(0 == notcurses_render(nc_));
     struct ncplane* ncsp = ncselector_plane(ncs);
     REQUIRE(nullptr != ncsp);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(ncsp, &dimy, &dimx);
     CHECK(4 == dimy);
     CHECK(strlen(opts.footer) + 2 == dimx);
@@ -125,7 +125,7 @@ TEST_CASE("Selectors") {
     CHECK(0 == notcurses_render(nc_));
     struct ncplane* ncsp = ncselector_plane(ncs);
     REQUIRE(nullptr != ncsp);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(ncsp, &dimy, &dimx);
     CHECK(7 == dimy);
     CHECK(15 < dimx);
@@ -245,7 +245,7 @@ TEST_CASE("Selectors") {
     CHECK(0 == strcmp(sel, items[0].option));
     struct ncplane* ncsp = ncselector_plane(ncs);
     REQUIRE(nullptr != ncsp);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(ncsp, &dimy, &dimx);
     CHECK(5 == dimy);
     ncselector_destroy(ncs, nullptr);
@@ -295,7 +295,7 @@ TEST_CASE("Selectors") {
     CHECK(0 == strcmp(sel, items[0].option));
     struct ncplane* ncsp = ncselector_plane(ncs);
     REQUIRE(nullptr != ncsp);
-    int dimy, dimx;
+    unsigned dimy, dimx;
     ncplane_dim_yx(ncsp, &dimy, &dimx);
     CHECK(6 == dimy);
     ncselector_destroy(ncs, nullptr);
