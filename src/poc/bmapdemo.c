@@ -186,7 +186,7 @@ demo(struct notcurses* nc){
       lastns = nowns;
     }
     notcurses_render(nc);
-    if(nowns - startns > 500000000ull){
+    if(nowns - startns > 5000000000ull){
       break;
     }
     struct timespec bsts = { 0, 10000000, };
