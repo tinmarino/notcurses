@@ -12,6 +12,7 @@ bmaps(struct notcurses* nc, struct ncvisual** ncvs){
   ncvs[2] = ncvisual_from_file("../data/von2.png");
   ncvs[3] = ncvisual_from_file("../data/von3.png");
   ncvs[4] = ncvisual_from_file("../data/von4.png");
+  ncvs[5] = ncvisual_from_file("../data/ulam.png");
   ncvisual_resize(ncvs[0], 212, 192);
   return 0;
 }
@@ -87,6 +88,24 @@ von_freak_cycle(struct notcurses* nc, struct ncplane* stdn, int dimy, int dimx){
   return 0;
 }
 
+static int
+demo_ulam(struct notcurses* nc, struct ncvisual* ulam){
+  int dimy, dimx;
+  struct ncplane* stdn = notcurses_stddim_yx(nc, &dimy, &dimx);
+  struct ncvisual_options vopts = {
+    .y = NCALIGN_CENTER,
+    .x = NCALIGN_CENTER,
+    .blitter = NCBLIT_PIXEL,
+    .flags = NCVISUAL_OPTION_VERALIGNED | NCVISUAL_OPTION_HORALIGNED,
+  };
+  struct ncplane* u = ncvisual_render(nc, ulam, &vopts);
+  for(int i = 0 ; i < 10 ; ++i){
+    von_freak_cycle(nc, stdn, dimy, dimx);
+  }
+  notcurses_render(nc);
+  return 0;
+}
+
 // four of 'em
 static int
 demo_von(struct notcurses* nc, struct ncvisual** vons){
@@ -153,12 +172,15 @@ fprintf(stderr, "p: %d/%d c: %d/%d l: %d/%d\n", py, px, cdimy, cdimx, ylen, xlen
     --x;
     ncplane_move_yx(vplanes[2], y, x);
   }
+  for(int i = 0 ; i < 4 ; ++i){
+    ncplane_destroy(vplanes[i]);
+  }
   return 0;
 }
 
 static int
 demo(struct notcurses* nc){
-  struct ncvisual* ncvs[5]; // buzz, von neumann, ...
+  struct ncvisual* ncvs[6]; // buzz, von neumann, ulam, ...
   if(bmaps(nc, ncvs) < 0){
     return -1;
   }
@@ -196,6 +218,9 @@ demo(struct notcurses* nc){
   ncplane_destroy(buzz);
   notcurses_render(nc);
   if(demo_von(nc, ncvs + 1)){
+    return -1;
+  }
+  if(demo_ulam(nc, ncvs[5])){
     return -1;
   }
   return 0;
