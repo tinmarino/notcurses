@@ -427,6 +427,7 @@ foreach(f ${POCSRCS})
   )
   target_link_libraries(${fe}
     PRIVATE notcurses "${TERMINFO_LIBRARIES}"
+    "${LIBM}"
   )
   target_link_directories(${fe}
     PRIVATE "${TERMINFO_LIBRARY_DIRS}"
