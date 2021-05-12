@@ -410,9 +410,9 @@ query_sixel(tinfo* ti, int fd){
         if(in == 'c'){
           // until graphics/ayosec is merged, alacritty doesn't actually
           // have sixel support. enable this then. FIXME
-          /*if(ti->alacritty_sixel_hack){
+          if(ti->alacritty_sixel_hack){
             setup_sixel_bitmaps(ti);
-          }*/
+          }
           state = DONE;
         }else if(in == ';'){
           state = WANT_C4;
