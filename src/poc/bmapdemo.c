@@ -15,6 +15,7 @@ bmaps(struct notcurses* nc, struct ncvisual** ncvs){
   ncvs[5] = ncvisual_from_file("../data/ulam.png");
   ncvs[6] = ncvisual_from_file("../data/eatme.png");
   ncvs[7] = ncvisual_from_file("../data/drinkme.png");
+  ncvs[8] = ncvisual_from_file("../data/weed.png");
   ncvisual_resize(ncvs[0], 212, 192);
   return 0;
 }
@@ -66,7 +67,7 @@ move_buzz(struct ncplane* buzz, int dimy, int dimx){
   //double r = sqrt(dy * dy + dx * dx) + (random() % 2);
   double r = 10;
   //double theta = atan(dy / dx);
-  theta += M_PI / 8;
+  theta += M_PI / 16;
   //fprintf(stderr, "distance: %g theta: %g\n", r, theta);
   int newy, newx;
   newy = (oy - ncplane_dim_y(buzz) / 2) + sin(theta) * r;
@@ -87,6 +88,56 @@ von_freak_cycle(struct notcurses* nc, struct ncplane* stdn, int dimy, int dimx){
     notcurses_render(nc);
     clock_nanosleep(CLOCK_MONOTONIC, 0, &bsts, NULL);
   }
+  return 0;
+}
+
+static int
+demo_weed(struct notcurses* nc, struct ncvisual* weed){
+  int dimy, dimx;
+  struct ncplane* stdn = notcurses_stddim_yx(nc, &dimy, &dimx);
+  struct ncvisual_options vopts = {
+    .y = NCALIGN_CENTER,
+    .x = NCALIGN_CENTER,
+    .blitter = NCBLIT_PIXEL,
+    .flags = NCVISUAL_OPTION_VERALIGNED | NCVISUAL_OPTION_HORALIGNED,
+  };
+  struct ncplane* u = ncvisual_render(nc, weed, &vopts);
+  if(u == NULL){
+    return -1;
+  }
+  notcurses_render(nc);
+  struct ncplane* n = ncplane_dup(u, NULL);
+  ncplane_move_below(n, u);
+  ncplane_set_fg_rgb(n, 0x555555);
+  ncplane_set_bg_rgb(n, 0x002200);
+  for(int y = 0 ; y < ncplane_dim_y(n) ; ++y){
+    ncplane_putstr_yx(n, y, 0, "notcursesⅲnotcursesⅲnotcursesⅲnotcursesⅲ");
+  }
+  struct timespec bsts = { 0, 10000000, };
+  int ii = 10 * ncplane_dim_y(n) - 1;
+  for(int i = 0 ; i < 10 * ncplane_dim_y(n) ; ++i, --ii){
+    ncplane_set_fg_rgb(n, 0x22ee22);
+    ncplane_set_bg_rgb(n, 0x113311);
+    ncplane_set_styles(n, NCSTYLE_BOLD);
+    int y, x, iy, ix;
+    y = (i / 10) % ncplane_dim_y(n);
+    x = (i % 10) * 4;
+    iy = (ii / 10) % ncplane_dim_y(n);
+    ix = (ii % 10) * 4;
+    ncplane_putstr_yx(n, y, x, "dank");
+    ncplane_putstr_yx(n, iy, ix, "knad");
+    freak(stdn, dimy, dimx);
+    notcurses_render(nc);
+    clock_nanosleep(CLOCK_MONOTONIC, 0, &bsts, NULL);
+    ncplane_set_styles(n, 0);
+    ncplane_set_fg_rgb(n, 0x555555);
+    ncplane_set_bg_rgb(n, 0x002200);
+    ncplane_putstr_yx(n, y, x, "    ");
+    ncplane_putstr_yx(n, iy, ix, "    ");
+  }
+  ncplane_destroy(u);
+  ncplane_destroy(n);
+  ncvisual_destroy(weed);
   return 0;
 }
 
@@ -152,10 +203,10 @@ demo_shrink(struct notcurses* nc, struct ncvisual* me){
   }
   while(py > cdimy && px > cdimx){
     if(py > cdimy){
-      py -= cdimy / 2;
+      py -= cdimy / 4;
     }
     if(px > cdimx){
-      px -= cdimx / 2;
+      px -= cdimx / 4;
     }
     freak(stdn, dimy, dimx);
     ncvisual_resize(me, py, px);
@@ -163,6 +214,7 @@ demo_shrink(struct notcurses* nc, struct ncvisual* me){
     notcurses_render(nc);
     ncplane_destroy(p);
   }
+  ncvisual_destroy(me);
   return 0;
 }
 
@@ -297,7 +349,7 @@ demo_von(struct notcurses* nc, struct ncvisual** vons){
 
 static int
 demo(struct notcurses* nc){
-  struct ncvisual* ncvs[8]; // buzz, von neumann, ulam, eatme, drinkme...
+  struct ncvisual* ncvs[9]; // buzz, von neumann, ulam, eatme, drinkme, weed
   if(bmaps(nc, ncvs) < 0){
     return -1;
   }
@@ -321,7 +373,7 @@ demo(struct notcurses* nc){
   ncplane_set_base(l, " ", 0, 0);
   ncplane_putstr_aligned(l, 0, NCALIGN_CENTER, "GT Nuclear Engineering, home of the three-eyed Buzz");
   ncplane_set_fg_rgb(l, 0xdddddd);
-  ncplane_putstr_aligned(l, 2, NCALIGN_CENTER, "(but still no phd 😞)");
+  ncplane_putstr_aligned(l, 2, NCALIGN_CENTER, "ɑβγ (but still no phd 😞) γβɑ");
   while(true){
     freak(stdn, dimy, dimx);
     struct timespec now;
@@ -350,6 +402,9 @@ demo(struct notcurses* nc){
     return -1;
   }
   if(demo_ulam(nc, ncvs[5])){
+    return -1;
+  }
+  if(demo_weed(nc, ncvs[8])){
     return -1;
   }
   if(demo_shrink(nc, ncvs[6])){
