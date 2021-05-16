@@ -16,7 +16,6 @@ bmaps(struct notcurses* nc, struct ncvisual** ncvs){
   ncvs[6] = ncvisual_from_file("../data/eatme.png");
   ncvs[7] = ncvisual_from_file("../data/drinkme.png");
   ncvs[8] = ncvisual_from_file("../data/weed.png");
-  ncvisual_resize(ncvs[0], 212, 192);
   return 0;
 }
 
@@ -353,6 +352,7 @@ demo_von(struct notcurses* nc, struct ncvisual** vons){
 
 static int
 demo_buzz(struct notcurses* nc, struct ncvisual* buzzv){
+  ncvisual_resize(buzzv, 212, 192);
   int dimy, dimx;
   struct ncplane* stdn = notcurses_stddim_yx(nc, &dimy, &dimx);
   struct ncvisual_options vopts = {
