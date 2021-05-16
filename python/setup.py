@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-# Copyright 2020 igo95862
+# Copyright 2020, 2021 igo95862
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,15 +13,37 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
 
-from setuptools import setup, Extension
+from os import environ
+
+from setuptools import Extension, setup
+
+if environ.get('CFLAGS') is None:
+    environ['CFLAGS'] = (
+        "-Werror "
+        "-Wextra -Wconversion -Wall")
+
+if environ.get('LDFLAGS') is None:
+    environ['LDFLAGS'] = "-Wl,--no-as-needed"
 
 setup(
     name="notcurses",
     version="2.0.2",
     packages=['notcurses'],
     ext_modules=[
-        Extension('notcurses/_notcurses', ['notcurses/_notcurses.c']),
+        Extension(
+            name='notcurses.notcurses',
+            sources=[
+                'notcurses/channels.c',
+                'notcurses/context.c',
+                'notcurses/main.c',
+                'notcurses/misc.c',
+                'notcurses/plane.c',
+            ],
+            libraries=['notcurses'],
+            language='c',
+        ),
     ],
     author="Nick Black",
     author_email="nickblack@linux.com",

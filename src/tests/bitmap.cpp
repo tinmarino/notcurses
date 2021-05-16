@@ -5,8 +5,6 @@
 TEST_CASE("Bitmaps") {
   auto nc_ = testing_notcurses();
   REQUIRE(nullptr != nc_);
-  ncplane* ncp_ = notcurses_stdplane(nc_);
-  REQUIRE(ncp_);
   auto n_ = notcurses_stdplane(nc_);
   REQUIRE(n_);
 
@@ -22,7 +20,7 @@ TEST_CASE("Bitmaps") {
     CHECK(nc_->tcache.bitmap_supported);
   }
 
-  SUBCASE("SprixelResize") {
+  SUBCASE("SprixelMinimize") {
     auto y = 10;
     auto x = 10;
     std::vector<uint32_t> v(x * y, htole(0xe61c28ff));
@@ -44,6 +42,36 @@ TEST_CASE("Bitmaps") {
     auto s = n->sprite;
     REQUIRE(nullptr != s);
     ncvisual_destroy(ncv);
+  }
+
+  SUBCASE("SprixelMaximize") {
+    auto y = 10;
+    auto x = 10;
+    std::vector<uint32_t> v(x * y, htole(0xe61c28ff));
+    auto ncv = ncvisual_from_rgba(v.data(), y, sizeof(decltype(v)::value_type) * x, x);
+    REQUIRE(nullptr != ncv);
+    auto nn = ncplane_dup(n_, nullptr);
+    REQUIRE(nullptr != nn);
+    struct ncvisual_options vopts = {
+      .n = nn,
+      .scaling = NCSCALE_NONE,
+      .y = 0, .x = 0,
+      .begy = 0, .begx = 0,
+      .leny = 0, .lenx = 0,
+      .blitter = NCBLIT_PIXEL,
+      .flags = NCVISUAL_OPTION_NODEGRADE,
+      .transcolor = 0,
+    };
+    int maxy, maxx;
+    ncplane_pixelgeom(n_, nullptr, nullptr, nullptr, nullptr, &maxy, &maxx);
+    CHECK(0 == ncvisual_resize(ncv, maxy, maxx));
+    auto n = ncvisual_render(nc_, ncv, &vopts);
+    REQUIRE(nn == n);
+    auto s = n->sprite;
+    REQUIRE(nullptr != s);
+    CHECK(0 == notcurses_render(nc_));
+    ncvisual_destroy(ncv);
+    CHECK(0 == ncplane_destroy(nn));
   }
 
   // a sprixel requires a plane large enough to hold it

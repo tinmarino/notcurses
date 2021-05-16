@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-# Copyright 2020 igo95862
+# Copyright 2020, 2021 igo95862
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,11 +14,49 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ._notcurses import get_notcurses_version
-from .notcurses import (NcAlign, NcChannels, NcDirect, NcInput, NcInputCodes,
-                        NcPlane, NotcursesContext, get_std_plane)
+from .notcurses import (
+    NcPlane, Notcurses, ncchannel_alpha, ncchannel_b, ncchannel_default_p,
+    ncchannel_g, ncchannel_palindex, ncchannel_palindex_p, ncchannel_r,
+    ncchannel_rgb8, ncchannel_rgb_initializer, ncchannel_set,
+    ncchannel_set_alpha, ncchannel_set_default, ncchannel_set_palindex,
+    ncchannel_set_rgb8, ncchannel_set_rgb8_clipped, ncchannels_bchannel,
+    ncchannels_bg_alpha, ncchannels_bg_default_p, ncchannels_bg_palindex,
+    ncchannels_bg_palindex_p, ncchannels_bg_rgb, ncchannels_bg_rgb8,
+    ncchannels_combine, ncchannels_fchannel, ncchannels_fg_alpha,
+    ncchannels_fg_default_p, ncchannels_fg_palindex,
+    ncchannels_fg_palindex_p, ncchannels_fg_rgb, ncchannels_fg_rgb8,
+    ncchannels_rgb_initializer, ncchannels_set_bchannel,
+    ncchannels_set_bg_alpha, ncchannels_set_bg_default,
+    ncchannels_set_bg_palindex, ncchannels_set_bg_rgb,
+    ncchannels_set_bg_rgb8, ncchannels_set_bg_rgb8_clipped,
+    ncchannels_set_fchannel, ncchannels_set_fg_alpha,
+    ncchannels_set_fg_default, ncchannels_set_fg_palindex,
+    ncchannels_set_fg_rgb, ncchannels_set_fg_rgb8,
+    ncchannels_set_fg_rgb8_clipped, ncstrwidth, notcurses_version,
+    notcurses_version_components,
+)
 
-__all__ = [
-    'NcPlane', 'get_std_plane', 'NcAlign', 'NcInput', 'NcInputCodes',
-    'get_notcurses_version', 'NcDirect', 'NcChannels', 'NotcursesContext'
-]
+__all__ = (
+    'NcPlane', 'Notcurses',
+
+    'ncchannel_alpha', 'ncchannel_b', 'ncchannel_default_p', 'ncchannel_g',
+    'ncchannel_palindex', 'ncchannel_palindex_p', 'ncchannel_r', 'ncchannel_rgb8',
+    'ncchannel_rgb_initializer', 'ncchannel_set', 'ncchannel_set_alpha',
+    'ncchannel_set_default', 'ncchannel_set_palindex', 'ncchannel_set_rgb8',
+    'ncchannel_set_rgb8_clipped', 'ncchannels_bchannel', 'ncchannels_bg_alpha',
+    'ncchannels_bg_default_p', 'ncchannels_bg_palindex',
+    'ncchannels_bg_palindex_p', 'ncchannels_bg_rgb', 'ncchannels_bg_rgb8',
+    'ncchannels_combine', 'ncchannels_fchannel', 'ncchannels_fg_alpha',
+    'ncchannels_fg_default_p', 'ncchannels_fg_palindex',
+    'ncchannels_fg_palindex_p', 'ncchannels_fg_rgb', 'ncchannels_fg_rgb8',
+    'ncchannels_rgb_initializer', 'ncchannels_set_bchannel',
+    'ncchannels_set_bg_alpha', 'ncchannels_set_bg_default',
+    'ncchannels_set_bg_palindex', 'ncchannels_set_bg_rgb',
+    'ncchannels_set_bg_rgb8', 'ncchannels_set_bg_rgb8_clipped',
+    'ncchannels_set_fchannel', 'ncchannels_set_fg_alpha',
+    'ncchannels_set_fg_default', 'ncchannels_set_fg_palindex',
+    'ncchannels_set_fg_rgb', 'ncchannels_set_fg_rgb8',
+    'ncchannels_set_fg_rgb8_clipped',
+
+    'ncstrwidth', 'notcurses_version', 'notcurses_version_components',
+)
