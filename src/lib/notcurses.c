@@ -564,6 +564,7 @@ ncplane* ncplane_dup(const ncplane* n, void* opaque){
     ncplane_destroy(newn);
     return NULL;
   }
+fprintf(stderr, "copying %zu from %p to %p\n", fbsize, newn->fb, n->fb);
   memmove(newn->fb, n->fb, fbsize);
   if(ncplane_cursor_move_yx(newn, n->y, n->x) < 0){
     ncplane_destroy(newn);

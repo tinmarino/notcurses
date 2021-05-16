@@ -107,6 +107,9 @@ demo_weed(struct notcurses* nc, struct ncvisual* weed){
   }
   notcurses_render(nc);
   struct ncplane* n = ncplane_dup(u, NULL);
+  if(n == NULL){
+    return -1;
+  }
   ncplane_move_below(n, u);
   ncplane_set_fg_rgb(n, 0x555555);
   ncplane_set_bg_rgb(n, 0x002200);
@@ -230,11 +233,11 @@ demo_grow(struct notcurses* nc, struct ncvisual* me){
     .flags = NCVISUAL_OPTION_VERALIGNED | NCVISUAL_OPTION_HORALIGNED,
   };
   int cdimy, cdimx;
-  ncvisual_blitter_geom(nc, me, &vopts, &py, &px, &cdimy, &cdimx, NULL);
+  ncvisual_blitter_geom(nc, me, &vopts, NULL, NULL, &cdimy, &cdimx, NULL);
   py = 0;
   px = 0;
   struct ncplane* p = NULL;
-  while(py < 500 && px < 240){
+  while(py < dimy * cdimy && px < dimx * cdimx){
     if(py < cdimy * (dimy - 1)){
       py += cdimy / 2;
     }
@@ -244,6 +247,7 @@ demo_grow(struct notcurses* nc, struct ncvisual* me){
     if(me == NULL){
       me = ncvisual_from_file("../data/drinkme.png");
     }
+fprintf(stderr, "resizing to %d %d\n", py, px);
     ncvisual_resize(me, py, px);
     p = ncvisual_render(nc, me, &vopts);
     notcurses_render(nc);
@@ -348,11 +352,7 @@ demo_von(struct notcurses* nc, struct ncvisual** vons){
 }
 
 static int
-demo(struct notcurses* nc){
-  struct ncvisual* ncvs[9]; // buzz, von neumann, ulam, eatme, drinkme, weed
-  if(bmaps(nc, ncvs) < 0){
-    return -1;
-  }
+demo_buzz(struct notcurses* nc, struct ncvisual* buzzv){
   int dimy, dimx;
   struct ncplane* stdn = notcurses_stddim_yx(nc, &dimy, &dimx);
   struct ncvisual_options vopts = {
@@ -361,7 +361,7 @@ demo(struct notcurses* nc){
     .blitter = NCBLIT_PIXEL,
     .flags = NCVISUAL_OPTION_VERALIGNED | NCVISUAL_OPTION_HORALIGNED,
   };
-  struct ncplane* buzz = ncvisual_render(nc, ncvs[0], &vopts);
+  struct ncplane* buzz = ncvisual_render(nc, buzzv, &vopts);
   uint64_t startns = 0, nowns, lastns = 0;
   struct ncplane_options opts = {
     .rows = 3,
@@ -394,10 +394,25 @@ demo(struct notcurses* nc){
     struct timespec bsts = { 0, 10000000, };
     clock_nanosleep(CLOCK_MONOTONIC, 0, &bsts, NULL);
   }
-  ncvisual_destroy(ncvs[0]);
+  ncvisual_destroy(buzzv);
   ncplane_destroy(buzz);
   ncplane_destroy(l);
   notcurses_render(nc);
+  return 0;
+}
+
+static int
+demo(struct notcurses* nc){
+  struct ncvisual* ncvs[9]; // buzz, von neumann, ulam, eatme, drinkme, weed
+  if(bmaps(nc, ncvs) < 0){
+    return -1;
+  }
+  if(demo_grow(nc, ncvs[7])){
+    return -1;
+  }
+  if(demo_buzz(nc, ncvs[0])){
+    return -1;
+  }
   if(demo_von(nc, ncvs + 1)){
     return -1;
   }
@@ -408,9 +423,6 @@ demo(struct notcurses* nc){
     return -1;
   }
   if(demo_shrink(nc, ncvs[6])){
-    return -1;
-  }
-  if(demo_grow(nc, ncvs[7])){
     return -1;
   }
   return 0;

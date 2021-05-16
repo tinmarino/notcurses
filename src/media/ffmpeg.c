@@ -221,7 +221,7 @@ int ffmpeg_resize(ncvisual* n, int rows, int cols){
   sframe->format = targformat;
   sframe->width = cols;
   sframe->height = rows;
-//fprintf(stderr, "SIZE DECODED: %d %d (%d) (want %d %d)\n", n->pixy, n->pixx, inf->linesize[0], rows, cols);
+fprintf(stderr, "SIZE DECODED: %d %d (%d) (want %d %d)\n", n->pixy, n->pixx, inf->linesize[0], rows, cols);
   int height = sws_scale(swsctx, (const uint8_t * const*)inf->data,
                          inf->linesize, 0,
                          inf->height, sframe->data,
