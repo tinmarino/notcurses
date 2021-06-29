@@ -1,6 +1,6 @@
 % ncls(1)
 % nick black <nickblack@linux.com>
-% v2.3.0
+% v2.3.7
 
 # NAME
 
@@ -31,12 +31,19 @@ ncls - List paths with rendering of multimedia
 
 **-a**|**--align** ***type***: Align images on **left**, **center**, or **right**.
 
-**-b**|**--blitter** ***blitter***: Blitter, one of **ascii**, **half**, **quad**, **sex**, **braille**, or **pixel**.
+**-b**|**--blitter** ***blitter***: Blitter, one of **ascii**, **half**,
+**quad**, **sex**, **braille**, or **pixel**. The default is **pixel**.
+If the chosen blitter is unavailable, **ncls** will degrade (see
+**notcurses_visual(3)**).
 
-**-s**|**--scale** ***scalemode***: Scaling mode, one of **none**, **hires**, **scale**, **scalehi**, or **stretch**.
+**-s**|**--scale** ***scalemode***: Scaling mode, one of **none**, **hires**,
+**scale**, **scalehi**, or **stretch**.
 
 paths: Run on the specified paths. If none are supplied, run on the current
 directory.
+
+If no scaling is specified, **hires** will be used with the **pixel** blitter,
+and **scalehi** will be used otherwise.
 
 # NOTES
 

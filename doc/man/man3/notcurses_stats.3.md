@@ -1,6 +1,6 @@
 % notcurses_stats(3)
 % nick black <nickblack@linux.com>
-% v2.3.0
+% v2.3.7
 
 # NAME
 
@@ -40,6 +40,8 @@ typedef struct ncstats {
   uint64_t refreshes;        // refreshes (unoptimized redraws)
   uint64_t sprixelemissions; // sprixel draw count
   uint64_t sprixelelisions;  // sprixel elision count
+  uint64_t sprixelbytes;     // sprixel bytes emitted
+  uint64_t appsync_updates;  // application-synchronized updates
 
   // current state -- these can decrease
   uint64_t fbbytes;          // bytes devoted to framebuffers
@@ -65,7 +67,7 @@ also resets all cumulative stats (immediate stats such as **fbbytes** are not
 reset).
 
 **renders** is the number of successful calls to **notcurses_render(3)**
-or **notcurses_render_to_buffer(3)**. **failed_renders** is the number of
+or **ncpile_render_to_buffer(3)**. **failed_renders** is the number of
 unsuccessful calls to these functions. **failed_renders** should be 0;
 renders are not expected to fail except under exceptional circumstances.
 should **notcurses_render(3)** fail while writing out a frame to the terminal,
@@ -80,12 +82,12 @@ ingest and reflect a frame is dependent on the size of the rasterized frame.
 **render_ns**, **render_max_ns**, and **render_min_ns** track the total
 amount of time spent rendering frames in nanoseconds. Rendering
 takes place in **ncpile_render** (called by **notcurses_render(3)** and
-**notcurses_render_to_buffer**). This step is independent of the terminal.
+**ncpile_render_to_buffer**). This step is independent of the terminal.
 
 **raster_ns**, **raster_max_ns**, and **raster_min_ns** track the total
 amount of time spent rasterizing frames in nanoseconds. Rasterizing
 takes place in **ncpile_raster** (called by **notcurses_raster(3)** and
-**notcurses_render_to_buffer**). This step depends on the terminal definitions.
+**ncpile_render_to_buffer**). This step depends on the terminal definitions.
 The same frame might not rasterize to the same bytes for different terminals.
 
 **writeout_ns**, **writeout_max_ns**, and **writeout_min_ns** track the total
@@ -107,6 +109,8 @@ plane.
 **sprixelemissions** is the number of sprixel draws. **sprixelelisions** is
 the number of times a sprixel was elided--essentially, the number of times
 a sprixel appeared in a rendered frame without freshly drawing it.
+**sprixelbytes** is the number of bytes used for sprixel drawing. It does not
+include move/delete operations, nor glyphs used to erase sprixels.
 
 # NOTES
 

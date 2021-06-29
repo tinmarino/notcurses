@@ -1,11 +1,10 @@
-#include <poll.h>
 #include <ctype.h>
 #include <limits.h>
 #include <unistd.h>
 #include <notcurses/direct.h>
 #include "internal.h"
 
-// Check whether the terminal geometry has changed, and if so, copies what can
+// Check whether the terminal geometry has changed, and if so, copy what can
 // be copied from the old lastframe. Assumes that the screen is always anchored
 // at the same origin. Initiates a resize cascade for the pile containing |pp|.
 // The current terminal geometry, changed or not, is written to |rows|/|cols|.
@@ -24,7 +23,7 @@ notcurses_resize_internal(ncplane* pp, int* restrict rows, int* restrict cols){
   int oldcols = pile->dimx;
   *rows = oldrows;
   *cols = oldcols;
-  if(update_term_dimensions(n->ttyfd, rows, cols, &n->tcache)){
+  if(update_term_dimensions(n->ttyfd, rows, cols, &n->tcache, n->margin_b)){
     return -1;
   }
   *rows -= n->margin_t + n->margin_b;
@@ -74,33 +73,6 @@ notcurses_resize(notcurses* n, int* restrict rows, int* restrict cols){
   return ret;
 }
 
-// write(2) until we've written it all. Uses poll(2) to avoid spinning on
-// EAGAIN, at a small cost of latency.
-static int
-blocking_write(int fd, const char* buf, size_t buflen){
-//fprintf(stderr, "writing %zu to %d...\n", buflen, fd);
-  size_t written = 0;
-  while(written < buflen){
-    ssize_t w = write(fd, buf + written, buflen - written);
-    if(w < 0){
-      if(errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR){
-        return -1;
-      }
-    }else{
-      written += w;
-    }
-    if(written < buflen){
-      struct pollfd pfd = {
-        .fd = fd,
-        .events = POLLOUT,
-        .revents = 0,
-      };
-      poll(&pfd, 1, -1);
-    }
-  }
-  return 0;
-}
-
 void nccell_release(ncplane* n, nccell* c){
   pool_release(&n->pool, c);
 }
@@ -113,7 +85,7 @@ void cell_release(ncplane* n, nccell* c){
 // Duplicate one cell onto another when they share a plane. Convenience wrapper.
 int nccell_duplicate(ncplane* n, nccell* targ, const nccell* c){
   if(cell_duplicate_far(&n->pool, targ, n, c) < 0){
-    logerror(ncplane_notcurses(n), "Failed duplicating cell\n");
+    logerror("Failed duplicating cell\n");
     return -1;
   }
   return 0;
@@ -187,6 +159,7 @@ paint_sprixel(ncplane* p, struct crender* rvec, int starty, int startx,
         if(state == SPRIXCELL_ANNIHILATED || state == SPRIXCELL_ANNIHILATED_TRANS){
 //fprintf(stderr, "REBUILDING AT %d/%d\n", y, x);
           sprite_rebuild(nc, s, y, x);
+//fprintf(stderr, "damaging due to rebuild [%s] %d/%d\n", nccell_extended_gcluster(crender->p, &crender->c), absy, absx);
         }
       }
     }
@@ -270,17 +243,17 @@ paint(ncplane* p, struct crender* rvec, int dstleny, int dstlenx,
       }
       const nccell* vis = &p->fb[nfbcellidx(p, y, x)];
 
-      if(nccell_fg_alpha(targc) > CELL_ALPHA_OPAQUE){
+      if(nccell_fg_alpha(targc) > NCALPHA_OPAQUE){
         vis = &p->fb[nfbcellidx(p, y, x)];
         if(nccell_fg_default_p(vis)){
           vis = &p->basecell;
         }
         if(nccell_fg_palindex_p(vis)){
-          if(nccell_fg_alpha(targc) == CELL_ALPHA_TRANSPARENT){
+          if(nccell_fg_alpha(targc) == NCALPHA_TRANSPARENT){
             nccell_set_fg_palindex(targc, nccell_fg_palindex(vis));
           }
         }else{
-          if(nccell_fg_alpha(vis) == CELL_ALPHA_HIGHCONTRAST){
+          if(nccell_fg_alpha(vis) == NCALPHA_HIGHCONTRAST){
             crender->s.highcontrast = true;
             crender->s.hcfgblends = crender->s.fgblends;
             crender->hcfg = cell_fchannel(targc);
@@ -290,9 +263,9 @@ paint(ncplane* p, struct crender* rvec, int dstleny, int dstlenx,
           crender->s.fgblends = fgblends;
           // crender->highcontrast can only be true if we just set it, since we're
           // about to set targc opaque based on crender->highcontrast (and this
-          // entire stanza is conditional on targc not being CELL_ALPHA_OPAQUE).
+          // entire stanza is conditional on targc not being NCALPHA_OPAQUE).
           if(crender->s.highcontrast){
-            nccell_set_fg_alpha(targc, CELL_ALPHA_OPAQUE);
+            nccell_set_fg_alpha(targc, NCALPHA_OPAQUE);
           }
         }
       }
@@ -302,7 +275,7 @@ paint(ncplane* p, struct crender* rvec, int dstleny, int dstlenx,
       // If it's transparent, it has no effect. Otherwise, update the
       // background channel and balpha.
       // Evaluate the background first, in case we have HIGHCONTRAST fg text.
-      if(nccell_bg_alpha(targc) > CELL_ALPHA_OPAQUE){
+      if(nccell_bg_alpha(targc) > NCALPHA_OPAQUE){
         vis = &p->fb[nfbcellidx(p, y, x)];
         // to be on the blitter stacking path, we need
         //  1) crender->s.blittedquads to be non-zero (we're below semigraphics)
@@ -313,7 +286,7 @@ paint(ncplane* p, struct crender* rvec, int dstleny, int dstlenx,
             vis = &p->basecell;
           }
           if(nccell_bg_palindex_p(vis)){
-            if(nccell_bg_alpha(targc) == CELL_ALPHA_TRANSPARENT){
+            if(nccell_bg_alpha(targc) == NCALPHA_TRANSPARENT){
               nccell_set_bg_palindex(targc, nccell_bg_palindex(vis));
             }
           }else{
@@ -326,7 +299,7 @@ paint(ncplane* p, struct crender* rvec, int dstleny, int dstlenx,
             vis = &p->basecell;
           }
           if(nccell_fg_palindex_p(vis)){
-            if(nccell_bg_alpha(targc) == CELL_ALPHA_TRANSPARENT){
+            if(nccell_bg_alpha(targc) == NCALPHA_TRANSPARENT){
               nccell_set_bg_palindex(targc, nccell_fg_palindex(vis));
             }
           }else{
@@ -354,7 +327,7 @@ paint(ncplane* p, struct crender* rvec, int dstleny, int dstlenx,
         // side of a wide glyph (nor the null codepoint).
         if( (targc->gcluster = vis->gcluster) ){ // index copy only
           if(crender->sprixel && crender->sprixel->invalidated == SPRIXEL_HIDE){
-//fprintf(stderr, "damaged due to hide\n");
+//fprintf(stderr, "damaged due to hide %d/%d\n", y, x);
             crender->s.damaged = 1;
           }
           crender->s.blittedquads = cell_blittedquadrants(vis);
@@ -388,13 +361,13 @@ paint(ncplane* p, struct crender* rvec, int dstleny, int dstlenx,
   }
 }
 
-// it's not a pure memset(), because CELL_ALPHA_OPAQUE is the zero value, and
-// we need CELL_ALPHA_TRANSPARENT
+// it's not a pure memset(), because NCALPHA_OPAQUE is the zero value, and
+// we need NCALPHA_TRANSPARENT
 static inline void
 init_rvec(struct crender* rvec, int totalcells){
   struct crender c = {};
-  nccell_set_fg_alpha(&c.c, CELL_ALPHA_TRANSPARENT);
-  nccell_set_bg_alpha(&c.c, CELL_ALPHA_TRANSPARENT);
+  nccell_set_fg_alpha(&c.c, NCALPHA_TRANSPARENT);
+  nccell_set_bg_alpha(&c.c, NCALPHA_TRANSPARENT);
   for(int t = 0 ; t < totalcells ; ++t){
     memcpy(&rvec[t], &c, sizeof(c));
   }
@@ -405,10 +378,10 @@ init_rvec(struct crender* rvec, int totalcells){
 // against the real background.
 static inline void
 lock_in_highcontrast(nccell* targc, struct crender* crender){
-  if(nccell_fg_alpha(targc) == CELL_ALPHA_TRANSPARENT){
+  if(nccell_fg_alpha(targc) == NCALPHA_TRANSPARENT){
     nccell_set_fg_default(targc);
   }
-  if(nccell_bg_alpha(targc) == CELL_ALPHA_TRANSPARENT){
+  if(nccell_bg_alpha(targc) == NCALPHA_TRANSPARENT){
     nccell_set_bg_default(targc);
   }
   if(crender->s.highcontrast){
@@ -441,12 +414,16 @@ postpaint_cell(nccell* lastframe, int dimx, struct crender* crender,
 //fprintf(stderr, "damaging due to cmp [%s] %d %d\n", nccell_extended_gcluster(crender->p, &crender->c), y, *x);
     if(crender->sprixel){
       sprixcell_e state = sprixel_state(crender->sprixel, y, *x);
-      if(!crender->s.p_beats_sprixel && state != SPRIXCELL_OPAQUE_KITTY && state != SPRIXCELL_OPAQUE_SIXEL){
-//fprintf(stderr, "damaged due to opaque\n");
+//fprintf(stderr, "state under candidate sprixel: %d %d/%d\n", state, y, *x);
+      // we don't need to change it when under an opaque Sixel cell, because
+      // that's always printed on top. we need to change it under kitty until
+      // we start using the animation protocol to do cuts without redraws FIXME.
+      if(!crender->s.p_beats_sprixel && state != SPRIXCELL_OPAQUE_SIXEL){
+//fprintf(stderr, "damaged due to opaque %d/%d\n", y, *x);
         crender->s.damaged = 1;
       }
     }else{
-//fprintf(stderr, "damaged due to opaque else %d %d\n", y, *x);
+//fprintf(stderr, "damaged due to opaque else %d/%d\n", y, *x);
       crender->s.damaged = 1;
     }
     assert(!nccell_wide_right_p(targc));
@@ -462,7 +439,7 @@ postpaint_cell(nccell* lastframe, int dimx, struct crender* crender,
       targc->channels = crender[-i].c.channels;
       targc->stylemask = crender[-i].c.stylemask;
       if(cellcmp_and_dupfar(pool, prevcell, crender->p, targc) > 0){
-//fprintf(stderr, "damaging due to cmp2\n");
+//fprintf(stderr, "damaging due to cmp2 %d/%d\n", y, *x);
         crender->s.damaged = 1;
       }
     }
@@ -471,7 +448,7 @@ postpaint_cell(nccell* lastframe, int dimx, struct crender* crender,
 
 
 // iterate over the rendered frame, adjusting the foreground colors for any
-// cells marked CELL_ALPHA_HIGHCONTRAST, and clearing any cell covered by a
+// cells marked NCALPHA_HIGHCONTRAST, and clearing any cell covered by a
 // wide glyph to its left.
 //
 // FIXME this cannot be performed at render time (we don't yet know the
@@ -496,27 +473,27 @@ int ncplane_mergedown(ncplane* restrict src, ncplane* restrict dst,
                       int dsty, int dstx){
 //fprintf(stderr, "Merging down %d/%d @ %d/%d to %d/%d\n", leny, lenx, begsrcy, begsrcx, dsty, dstx);
   if(dsty >= dst->leny || dstx >= dst->lenx){
-    logerror(ncplane_notcurses_const(dst), "Dest origin %d/%d ≥ dest dimensions %d/%d\n",
+    logerror("Dest origin %d/%d ≥ dest dimensions %d/%d\n",
              dsty, dstx, dst->leny, dst->lenx);
     return -1;
   }
   if(dst->leny - leny < dsty || dst->lenx - lenx < dstx){
-    logerror(ncplane_notcurses_const(dst), "Dest len %d/%d ≥ dest dimensions %d/%d\n",
+    logerror("Dest len %d/%d ≥ dest dimensions %d/%d\n",
              leny, lenx, dst->leny, dst->lenx);
     return -1;
   }
   if(begsrcy >= src->leny || begsrcx >= src->lenx){
-    logerror(ncplane_notcurses_const(dst), "Source origin %d/%d ≥ source dimensions %d/%d\n",
+    logerror("Source origin %d/%d ≥ source dimensions %d/%d\n",
              begsrcy, begsrcx, src->leny, src->lenx);
     return -1;
   }
   if(src->leny - leny < begsrcy || src->lenx - lenx < begsrcx){
-    logerror(ncplane_notcurses_const(dst), "Source len %d/%d ≥ source dimensions %d/%d\n",
+    logerror("Source len %d/%d ≥ source dimensions %d/%d\n",
              leny, lenx, src->leny, src->lenx);
     return -1;
   }
   if(src->sprite || dst->sprite){
-    logerror(ncplane_notcurses_const(dst), "Can't merge sprixel planes\n");
+    logerror("Can't merge sprixel planes\n");
     return -1;
   }
   const int totalcells = dst->leny * dst->lenx;
@@ -524,7 +501,7 @@ int ncplane_mergedown(ncplane* restrict src, ncplane* restrict dst,
   const size_t crenderlen = sizeof(struct crender) * totalcells;
   struct crender* rvec = malloc(crenderlen);
   if(!rendfb || !rvec){
-    logerror(ncplane_notcurses_const(dst), "Error allocating render state for %dx%d\n", leny, lenx);
+    logerror("Error allocating render state for %dx%d\n", leny, lenx);
     free(rendfb);
     free(rvec);
     return -1;
@@ -542,9 +519,10 @@ int ncplane_mergedown(ncplane* restrict src, ncplane* restrict dst,
 }
 
 int ncplane_mergedown_simple(ncplane* restrict src, ncplane* restrict dst){
-  const notcurses* nc = ncplane_notcurses_const(src);
+  // have to check dst, since we used to accept a NULL dst to mean the
+  // standard plane (this was unsafe, since src might be in another pile).
   if(dst == NULL){
-    dst = nc->stdplane;
+    return -1;
   }
   int dimy, dimx;
   ncplane_dim_yx(dst, &dimy, &dimx);
@@ -572,74 +550,12 @@ term_putc(FILE* out, const egcpool* e, const nccell* c){
   return 0;
 }
 
-// check the current and target style bitmasks against the specified 'stylebit'.
-// if they are different, and we have the necessary capability, write the
-// applicable terminfo entry to 'out'. returns -1 only on a true error.
-int term_setstyle(FILE* out, unsigned cur, unsigned targ, unsigned stylebit,
-                  const char* ton, const char* toff){
-  int ret = 0;
-  unsigned curon = cur & stylebit;
-  unsigned targon = targ & stylebit;
-  if(curon != targon){
-    if(targon){
-      if(ton){
-        ret = term_emit(ton, out, false);
-      }
-    }else{
-      if(toff){ // how did this happen? we can turn it on, but not off?
-        ret = term_emit(toff, out, false);
-      }
-    }
-  }
-  if(ret < 0){
-    return -1;
-  }
-  return 0;
-}
-
 // write any escape sequences necessary to set the desired style
 static inline int
 term_setstyles(FILE* out, notcurses* nc, const nccell* c){
-  bool normalized = false;
-  uint32_t cellattr = nccell_styles(c);
-  if(cellattr == nc->rstate.curattr){
-    return 0; // happy agreement, change nothing
-  }
-  int ret = 0;
-  // if only italics changed, don't emit any sgr escapes. xor of current and
-  // target ought have all 0s in the lower 8 bits if only italics changed.
-  if((cellattr ^ nc->rstate.curattr) & 0xfful){
-    // if everything's 0, emit the shorter sgr0
-    if(nc->tcache.sgr0 && ((cellattr & NCSTYLE_MASK) == 0)){
-      if(term_emit(nc->tcache.sgr0, out, false) < 0){
-        ret = -1;
-      }else{
-        normalized = true;
-      }
-    }else if(nc->tcache.sgr){
-      if(term_emit(tiparm(nc->tcache.sgr,
-                          cellattr & NCSTYLE_STANDOUT,
-                          cellattr & NCSTYLE_UNDERLINE,
-                          cellattr & NCSTYLE_REVERSE,
-                          cellattr & NCSTYLE_BLINK,
-                          cellattr & NCSTYLE_DIM,
-                          cellattr & NCSTYLE_BOLD,
-                          cellattr & NCSTYLE_INVIS,
-                          cellattr & NCSTYLE_PROTECT, 0),
-                          out, false) < 0){
-        ret = -1;
-      }else{
-        normalized = true;
-      }
-    }
-    // sgr will blow away italics/struck if they were set beforehand
-    nc->rstate.curattr &= ~(NCSTYLE_ITALIC | NCSTYLE_STRUCK);
-  }
-  ret |= term_setstyle(out, nc->rstate.curattr, cellattr, NCSTYLE_ITALIC,
-                       nc->tcache.italics, nc->tcache.italoff);
-  ret |= term_setstyle(out, nc->rstate.curattr, cellattr, NCSTYLE_STRUCK,
-                       nc->tcache.struck, nc->tcache.struckoff);
-  nc->rstate.curattr = cellattr;
+  unsigned normalized = false;
+  int ret = coerce_styles(out, &nc->tcache, &nc->rstate.curattr,
+                          nccell_styles(c), &normalized);
   if(normalized){
     nc->rstate.fgdefelidable = true;
     nc->rstate.bgdefelidable = true;
@@ -718,60 +634,62 @@ term_esc_rgb(FILE* out, bool foreground, unsigned r, unsigned g, unsigned b){
 }
 
 static inline int
-term_bg_rgb8(bool RGBflag, const char* setab, int colors, FILE* out,
-             unsigned r, unsigned g, unsigned b, uint32_t bg_collides_default){
+term_bg_rgb8(const tinfo* ti, FILE* out, unsigned r, unsigned g, unsigned b){
   // We typically want to use tputs() and tiperm() to acquire and write the
   // escapes, as these take into account terminal-specific delays, padding,
   // etc. For the case of DirectColor, there is no suitable terminfo entry, but
   // we're also in that case working with hopefully more robust terminals.
   // If it doesn't work, eh, it doesn't work. Fuck the world; save yourself.
-  if(RGBflag){
-    if(bg_collides_default){
-      if((r == (bg_collides_default & 0xff0000lu)) &&
-         (g == (bg_collides_default & 0xff00lu)) &&
-         (b == (bg_collides_default & 0xfflu))){
-        ++b; // what if it's 255 FIXME
+  if(ti->caps.rgb){
+    if(ti->bg_collides_default){
+      if((r == (ti->bg_collides_default & 0xff0000lu)) &&
+         (g == (ti->bg_collides_default & 0xff00lu)) &&
+         (b == (ti->bg_collides_default & 0xfflu))){
+        if(b < 255){
+          ++b;
+        }else{
+          --b;
+        }
       }
     }
     return term_esc_rgb(out, false, r, g, b);
   }else{
-    if(setab == NULL){
-      return 0;
-    }
-    // For 256-color indexed mode, start constructing a palette based off
-    // the inputs *if we can change the palette*. If more than 256 are used on
-    // a single screen, start... combining close ones? For 8-color mode, simple
-    // interpolation. I have no idea what to do for 88 colors. FIXME
-    if(colors >= 256){
-      return term_emit(tiparm(setab, rgb_quantize_256(r, g, b)), out, false);
-    }else if(colors >= 8){
-      return term_emit(tiparm(setab, rgb_quantize_8(r, g, b)), out, false);
+    const char* setab = get_escape(ti, ESCAPE_SETAB);
+    if(setab){
+      // For 256-color indexed mode, start constructing a palette based off
+      // the inputs *if we can change the palette*. If more than 256 are used on
+      // a single screen, start... combining close ones? For 8-color mode, simple
+      // interpolation. I have no idea what to do for 88 colors. FIXME
+      if(ti->caps.colors >= 256){
+        return term_emit(tiparm(setab, rgb_quantize_256(r, g, b)), out, false);
+      }else if(ti->caps.colors >= 8){
+        return term_emit(tiparm(setab, rgb_quantize_8(r, g, b)), out, false);
+      }
     }
   }
   return 0;
 }
 
-int term_fg_rgb8(bool RGBflag, const char* setaf, int colors, FILE* out,
-                 unsigned r, unsigned g, unsigned b){
+int term_fg_rgb8(const tinfo* ti, FILE* out, unsigned r, unsigned g, unsigned b){
   // We typically want to use tputs() and tiperm() to acquire and write the
   // escapes, as these take into account terminal-specific delays, padding,
   // etc. For the case of DirectColor, there is no suitable terminfo entry, but
   // we're also in that case working with hopefully more robust terminals.
   // If it doesn't work, eh, it doesn't work. Fuck the world; save yourself.
-  if(RGBflag){
+  if(ti->caps.rgb){
     return term_esc_rgb(out, true, r, g, b);
   }else{
-    if(setaf == NULL){
-      return 0;
-    }
-    // For 256-color indexed mode, start constructing a palette based off
-    // the inputs *if we can change the palette*. If more than 256 are used on
-    // a single screen, start... combining close ones? For 8-color mode, simple
-    // interpolation. I have no idea what to do for 88 colors. FIXME
-    if(colors >= 256){
-      return term_emit(tiparm(setaf, rgb_quantize_256(r, g, b)), out, false);
-    }else if(colors >= 8){
-      return term_emit(tiparm(setaf, rgb_quantize_8(r, g, b)), out, false);
+    const char* setaf = get_escape(ti, ESCAPE_SETAF);
+    if(setaf){
+      // For 256-color indexed mode, start constructing a palette based off
+      // the inputs *if we can change the palette*. If more than 256 are used on
+      // a single screen, start... combining close ones? For 8-color mode, simple
+      // interpolation. I have no idea what to do for 88 colors. FIXME
+      if(ti->caps.colors >= 256){
+        return term_emit(tiparm(setaf, rgb_quantize_256(r, g, b)), out, false);
+      }else if(ti->caps.colors >= 8){
+        return term_emit(tiparm(setaf, rgb_quantize_8(r, g, b)), out, false);
+      }
     }
   }
   return 0;
@@ -779,7 +697,8 @@ int term_fg_rgb8(bool RGBflag, const char* setaf, int colors, FILE* out,
 
 static inline int
 update_palette(notcurses* nc, FILE* out){
-  if(nc->tcache.CCCflag){
+  if(nc->tcache.caps.can_change_colors){
+    const char* initc = get_escape(&nc->tcache, ESCAPE_INITC);
     for(size_t damageidx = 0 ; damageidx < sizeof(nc->palette.chans) / sizeof(*nc->palette.chans) ; ++damageidx){
       unsigned r, g, b;
       if(nc->palette_damage[damageidx]){
@@ -789,7 +708,7 @@ update_palette(notcurses* nc, FILE* out){
         r = r * 1000 / 255;
         g = g * 1000 / 255;
         b = b * 1000 / 255;
-        term_emit(tiparm(nc->tcache.initc, damageidx, r, g, b), out, false);
+        term_emit(tiparm(initc, damageidx, r, g, b), out, false);
         nc->palette_damage[damageidx] = false;
       }
     }
@@ -811,18 +730,20 @@ goto_location(notcurses* nc, FILE* out, int y, int x){
   // if we don't have hpa, force a cup even if we're only 1 char away. the only
   // terminal i know supporting cup sans hpa is vt100, and vt100 can suck it.
   // you can't use cuf for backwards moves anyway; again, vt100 can suck it.
-  if(nc->rstate.y == y && nc->tcache.hpa && !nc->rstate.hardcursorpos){ // only need move x
+  const char* hpa = get_escape(&nc->tcache, ESCAPE_HPA);
+  if(nc->rstate.y == y && hpa && !nc->rstate.hardcursorpos){ // only need move x
     if(nc->rstate.x == x){ // needn't move shit
       return 0;
     }
-    if(x == nc->rstate.x + 1 && nc->tcache.cuf1){
-      ret = term_emit(nc->tcache.cuf1, out, false);
+    const char* cuf1 = get_escape(&nc->tcache, ESCAPE_CUF1);
+    if(x == nc->rstate.x + 1 && cuf1){
+      ret = term_emit(cuf1, out, false);
     }else{
-      ret = term_emit(tiparm(nc->tcache.hpa, x), out, false);
+      ret = term_emit(tiparm(hpa, x), out, false);
     }
   }else{
-    // cup is required, no need to check for existence
-    ret = term_emit(tiparm(nc->tcache.cup, y, x), out, false);
+    // cup is required, no need to verify existence
+    ret = term_emit(tiparm(get_escape(&nc->tcache, ESCAPE_CUP), y, x), out, false);
     nc->rstate.hardcursorpos = 0;
   }
   nc->rstate.x = x;
@@ -834,16 +755,19 @@ goto_location(notcurses* nc, FILE* out, int y, int x){
 // necessary return to default (if one is necessary), and update rstate.
 static inline int
 raster_defaults(notcurses* nc, bool fgdef, bool bgdef, FILE* out){
-  if(!nc->tcache.op){ // if we don't have op, we don't have fgop/bgop
+  const char* op = get_escape(&nc->tcache, ESCAPE_OP);
+  if(op == NULL){ // if we don't have op, we don't have fgop/bgop
     return 0;
   }
+  const char* fgop = get_escape(&nc->tcache, ESCAPE_FGOP);
+  const char* bgop = get_escape(&nc->tcache, ESCAPE_BGOP);
   bool mustsetfg = fgdef && !nc->rstate.fgdefelidable;
   bool mustsetbg = bgdef && !nc->rstate.bgdefelidable;
-  if(!mustsetfg && !mustsetbg){ // don't need emit anything
+  if(!mustsetfg && !mustsetbg){ // needn't emit anything
     ++nc->stats.defaultelisions;
     return 0;
-  }else if((mustsetfg && mustsetbg) || !nc->tcache.fgop){
-    if(term_emit(nc->tcache.op, out, false)){
+  }else if((mustsetfg && mustsetbg) || !fgop || !bgop){
+    if(term_emit(op, out, false)){
       return -1;
     }
     nc->rstate.fgdefelidable = true;
@@ -852,15 +776,15 @@ raster_defaults(notcurses* nc, bool fgdef, bool bgdef, FILE* out){
     nc->rstate.bgelidable = false;
     nc->rstate.fgpalelidable = false;
     nc->rstate.bgpalelidable = false;
-  }else if(mustsetfg){
-    if(term_emit(nc->tcache.fgop, out, false)){
+  }else if(mustsetfg){ // if we reach here, we must have fgop
+    if(term_emit(fgop, out, false)){
       return -1;
     }
     nc->rstate.fgdefelidable = true;
     nc->rstate.fgelidable = false;
     nc->rstate.fgpalelidable = false;
-  }else{
-    if(term_emit(nc->tcache.bgop, out, false)){
+  }else{ // mustsetbg and !mustsetfg and bgop != NULL
+    if(term_emit(bgop, out, false)){
       return -1;
     }
     nc->rstate.bgdefelidable = true;
@@ -910,36 +834,37 @@ emit_bg_palindex(notcurses* nc, FILE* out, const nccell* srccell){
 }
 
 // remove any sprixels which are no longer desired. for kitty, this will be
-// a pure erase; for sixel, we must overwrite.
-static int
+// a pure erase; for sixel, we must overwrite. returns -1 on failure, and
+// otherwise the number of bytes emitted redrawing sprixels.
+static int64_t
 clean_sprixels(notcurses* nc, ncpile* p, FILE* out){
   sprixel* s;
   sprixel** parent = &p->sprixelcache;
-  int ret = 0;
+  int64_t bytesemitted = 0;
   while( (s = *parent) ){
     if(s->invalidated == SPRIXEL_HIDE){
 //fprintf(stderr, "OUGHT HIDE %d [%dx%d] %p\n", s->id, s->dimy, s->dimx, s);
-      if(sprite_destroy(nc, p, out, s) == 0){
-        if( (*parent = s->next) ){
-          s->next->prev = s->prev;
-        }
-        sprixel_free(s);
-      }else{
-        ret = -1;
+      if(sprite_destroy(nc, p, out, s)){
+        return -1;
       }
+      if( (*parent = s->next) ){
+        s->next->prev = s->prev;
+      }
+      sprixel_free(s);
     }else if(s->invalidated == SPRIXEL_MOVED || s->invalidated == SPRIXEL_INVALIDATED){
       int y, x;
       ncplane_yx(s->n, &y, &x);
-      // FIXME clean this up, don't use sprite_draw, etc.
+//fprintf(stderr, "1 MOVING BITMAP %d STATE %d AT %d/%d for %p\n", s->id, s->invalidated, y + nc->margin_t, x + nc->margin_l, s->n);
       // without this, kitty flickers
-//fprintf(stderr, "1 MOVING BITMAP %d STATE %d AT %d/%d for %p\n", s->id, s->invalidated, y + nc->stdplane->absy, x + nc->stdplane->absx, s->n);
       if(s->invalidated == SPRIXEL_MOVED){
         sprite_destroy(nc, p, out, s);
       }
-      if(goto_location(nc, out, y + nc->stdplane->absy, x + nc->stdplane->absx) == 0){
-        if(sprite_draw(nc, p, s, out)){
+      if(goto_location(nc, out, y + nc->margin_t, x + nc->margin_l) == 0){
+        int r = sprite_redraw(nc, p, s, out);
+        if(r < 0){
           return -1;
         }
+        bytesemitted += r;
         nc->rstate.hardcursorpos = true;
       }
       parent = &s->next;
@@ -949,31 +874,44 @@ clean_sprixels(notcurses* nc, ncpile* p, FILE* out){
       parent = &s->next;
     }
   }
-  return ret;
+  return bytesemitted;
 }
 
-// returns -1 on error, 0 on success. draw any sprixels. any material
-// underneath them has already been updated.
 static int
+rasterize_scrolls(ncpile* p, FILE* out){
+//fprintf(stderr, "%d tardies to work off, by far the most in the class\n", p->scrolls);
+  while(p->scrolls){
+    if(fprintf(out, "\n") < 0){
+      return -1;
+    }
+    --p->scrolls;
+  }
+  return 0;
+}
+
+// draw any invalidated sprixels. returns -1 on error, number of bytes written
+// on success. any material underneath them has already been updated.
+static int64_t
 rasterize_sprixels(notcurses* nc, ncpile* p, FILE* out){
-  int ret = 0;
+  int64_t bytesemitted = 0;
   for(sprixel* s = p->sprixelcache ; s ; s = s->next){
     if(s->invalidated == SPRIXEL_INVALIDATED){
       int y, x;
       ncplane_yx(s->n, &y, &x);
-//fprintf(stderr, "3 DRAWING BITMAP %d STATE %d AT %d/%d for %p\n", s->id, s->invalidated, y + nc->stdplane->absy, x + nc->stdplane->absx, s->n);
-      if(goto_location(nc, out, y + nc->stdplane->absy, x + nc->stdplane->absx) == 0){
-        if(sprite_draw(nc, p, s, out)){
-          return -1;
-        }
-        nc->rstate.hardcursorpos = true;
-      }else{
-        ret = -1;
+//fprintf(stderr, "3 DRAWING BITMAP %d STATE %d AT %d/%d for %p\n", s->id, s->invalidated, y + nc->margin_t, x + nc->margin_l, s->n);
+      if(goto_location(nc, out, y + nc->margin_t, x + nc->margin_l)){
+        return -1;
       }
+      int r = sprite_draw(nc, p, s, out);
+      if(r < 0){
+        return -1;
+      }
+      bytesemitted += r;
+      nc->rstate.hardcursorpos = true;
       ++nc->stats.sprixelemissions;
     }
   }
-  return ret;
+  return bytesemitted;
 }
 
 // Producing the frame requires three steps:
@@ -990,10 +928,10 @@ rasterize_sprixels(notcurses* nc, ncpile* p, FILE* out){
 static int
 rasterize_core(notcurses* nc, const ncpile* p, FILE* out, unsigned phase){
   struct crender* rvec = p->crender;
-  for(int y = nc->stdplane->absy ; y < p->dimy + nc->stdplane->absy ; ++y){
-    const int innery = y - nc->stdplane->absy;
-    for(int x = nc->stdplane->absx ; x < p->dimx + nc->stdplane->absx ; ++x){
-      const int innerx = x - nc->stdplane->absx;
+  for(int y = nc->margin_t; y < p->dimy + nc->margin_t ; ++y){
+    const int innery = y - nc->margin_t;
+    for(int x = nc->margin_l ; x < p->dimx + nc->margin_l ; ++x){
+      const int innerx = x - nc->margin_l;
       const size_t damageidx = innery * nc->lfdimx + innerx;
       unsigned r, g, b, br, bg, bb;
       const nccell* srccell = &nc->lastframe[damageidx];
@@ -1043,7 +981,7 @@ rasterize_core(notcurses* nc, const ncpile* p, FILE* out, unsigned phase){
           if(nc->rstate.fgelidable && nc->rstate.lastr == r && nc->rstate.lastg == g && nc->rstate.lastb == b){
             ++nc->stats.fgelisions;
           }else{
-            if(term_fg_rgb8(nc->tcache.RGBflag, nc->tcache.setaf, nc->tcache.colors, out, r, g, b)){
+            if(term_fg_rgb8(&nc->tcache, out, r, g, b)){
               return -1;
             }
             ++nc->stats.fgemissions;
@@ -1068,9 +1006,7 @@ rasterize_core(notcurses* nc, const ncpile* p, FILE* out, unsigned phase){
           if(nc->rstate.bgelidable && nc->rstate.lastbr == br && nc->rstate.lastbg == bg && nc->rstate.lastbb == bb){
             ++nc->stats.bgelisions;
           }else{
-            if(term_bg_rgb8(nc->tcache.RGBflag, nc->tcache.setab,
-                            nc->tcache.colors, out, br, bg, bb,
-                            nc->tcache.bg_collides_default)){
+            if(term_bg_rgb8(&nc->tcache, out, br, bg, bb)){
               return -1;
             }
             ++nc->stats.bgemissions;
@@ -1084,7 +1020,7 @@ rasterize_core(notcurses* nc, const ncpile* p, FILE* out, unsigned phase){
         // this is used to invalidate the sprixel in the first text round,
         // which is only necessary for sixel, not kitty.
         if(rvec[damageidx].sprixel){
-          sprixcell_e scstate = sprixel_state(rvec[damageidx].sprixel, y - nc->stdplane->absy, x - nc->stdplane->absx);
+          sprixcell_e scstate = sprixel_state(rvec[damageidx].sprixel, y - nc->margin_t, x - nc->margin_l);
           if((scstate == SPRIXCELL_MIXED_SIXEL || scstate == SPRIXCELL_OPAQUE_SIXEL)
              && !rvec[damageidx].s.p_beats_sprixel){
 //fprintf(stderr, "INVALIDATING at %d/%d (%u)\n", y, x, rvec[damageidx].s.p_beats_sprixel);
@@ -1108,27 +1044,39 @@ rasterize_core(notcurses* nc, const ncpile* p, FILE* out, unsigned phase){
   return 0;
 }
 
+// 'asu' on input is non-0 if application-synchronized updates are permitted
+// (they are not, for instance, when rendering to a non-tty). on output,
+// assuming success, it is non-0 if application-synchronized updates are
+// desired; in this case, an ASU footer is present at the end of the buffer.
 static int
-notcurses_rasterize_inner(notcurses* nc, ncpile* p, FILE* out){
-  fseeko(out, 0, SEEK_SET);
+notcurses_rasterize_inner(notcurses* nc, ncpile* p, FILE* out, unsigned* asu){
   // we only need to emit a coordinate if it was damaged. the damagemap is a
   // bit per coordinate, one per struct crender.
   // don't write a clearscreen. we only update things that have been changed.
   // we explicitly move the cursor at the beginning of each output line, so no
   // need to home it expliticly.
-//fprintf(stderr, "pile %p ymax: %d xmax: %d\n", p, p->dimy + nc->stdplane->absy, p->dimx + nc->stdplane->absx);
-  if(clean_sprixels(nc, p, out) < 0){
+//fprintf(stderr, "pile %p ymax: %d xmax: %d\n", p, p->dimy + nc->margin_t, p->dimx + nc->margin_l);
+  int64_t sprixelbytes = clean_sprixels(nc, p, out);
+  if(sprixelbytes < 0){
     return -1;
   }
   update_palette(nc, out);
 //fprintf(stderr, "RASTERIZE CORE\n");
+  if(rasterize_scrolls(p, out)){
+    return -1;
+  }
   if(rasterize_core(nc, p, out, 0)){
     return -1;
   }
 //fprintf(stderr, "RASTERIZE SPRIXELS\n");
-  if(rasterize_sprixels(nc, p, out) < 0){
+  int64_t rasprixelbytes = rasterize_sprixels(nc, p, out);
+  if(rasprixelbytes < 0){
     return -1;
   }
+  sprixelbytes += rasprixelbytes;
+  pthread_mutex_lock(&nc->statlock);
+  nc->stats.sprixelbytes += sprixelbytes;
+  pthread_mutex_unlock(&nc->statlock);
 //fprintf(stderr, "RASTERIZE CORE\n");
   if(rasterize_core(nc, p, out, 1)){
     return -1;
@@ -1136,20 +1084,59 @@ notcurses_rasterize_inner(notcurses* nc, ncpile* p, FILE* out){
   if(fflush(out)){
     return -1;
   }
+#define MIN_ASU_SIZE 4096 // FIXME
+  if(*asu){
+    if(nc->rstate.mstrsize >= MIN_ASU_SIZE){
+      const char* endasu = get_escape(&nc->tcache, ESCAPE_ESU);
+      if(endasu){
+        if(fprintf(out, "%s", endasu) < 0 || fflush(out)){
+          return -1;
+        }
+      }else{
+        *asu = 0;
+      }
+    }else{
+      *asu = 0;
+    }
+  }
+#undef MIN_ASU_SIZE
   return nc->rstate.mstrsize;
 }
 
 // rasterize the rendered frame, and blockingly write it out to the terminal.
 static int
 raster_and_write(notcurses* nc, ncpile* p, FILE* out){
-  if(notcurses_rasterize_inner(nc, p, out) < 0){
+  fseeko(out, 0, SEEK_SET);
+  // will we be using application-synchronized updates? if this comes back as
+  // non-zero, we are, and must emit the header. no ASU without a tty, and we
+  // can't have the escape without being connected to one...
+  const char* basu = get_escape(&nc->tcache, ESCAPE_BSU);
+  unsigned useasu = basu ? 1 : 0;
+  // if we have ASU support, emit a BSU speculatively. if we do so, but don't
+  // actually use an ESU, this BASU must be skipped on write.
+  if(useasu){
+    if(ncfputs(basu, out) == EOF){
+      return -1;
+    }
+  }
+  if(notcurses_rasterize_inner(nc, p, out, &useasu) < 0){
     return -1;
   }
   int ret = 0;
-  //fflush(nc->ttyfp);
   sigset_t oldmask;
   block_signals(&oldmask);
-  if(blocking_write(fileno(nc->ttyfp), nc->rstate.mstream, nc->rstate.mstrsize)){
+  // if we loaded a BSU into the front, but don't actually want to use it,
+  // we start printing after the BSU.
+  size_t moffset = 0;
+  if(basu){
+    if(useasu){
+      ++nc->stats.appsync_updates;
+    }else{
+      moffset = strlen(basu);
+    }
+  }
+  if(blocking_write(fileno(nc->ttyfp), nc->rstate.mstream + moffset,
+                    nc->rstate.mstrsize - moffset)){
     ret = -1;
   }
   unblock_signals(&oldmask);
@@ -1186,12 +1173,17 @@ notcurses_rasterize(notcurses* nc, ncpile* p, FILE* out){
 static int
 home_cursor(notcurses* nc, bool flush){
   int ret = -1;
-  if(nc->tcache.home){
-    ret = term_emit(nc->tcache.home, nc->ttyfp, flush);
-  }else if(nc->tcache.cup){
-    ret = term_emit(tiparm(nc->tcache.cup, 1, 1), nc->ttyfp, flush);
-  }else if(nc->tcache.clearscr){
-    ret = term_emit(nc->tcache.clearscr, nc->ttyfp, flush);
+  const char* home = get_escape(&nc->tcache, ESCAPE_HOME);
+  if(home){
+    ret = term_emit(home, nc->ttyfp, flush);
+  }else{
+    const char* cup = get_escape(&nc->tcache, ESCAPE_CUP);
+    const char* clearscr = get_escape(&nc->tcache, ESCAPE_CLEAR);
+    if(cup){
+      ret = term_emit(tiparm(cup, 1, 1), nc->ttyfp, flush);
+    }else if(clearscr){
+      ret = term_emit(clearscr, nc->ttyfp, flush);
+    }
   }
   if(ret >= 0){
     nc->rstate.x = 0;
@@ -1211,8 +1203,8 @@ int notcurses_refresh(notcurses* nc, int* restrict dimy, int* restrict dimx){
     return -1;
   }
   ncpile p = {};
-  p.dimy = nc->stdplane->leny;
-  p.dimx = nc->stdplane->lenx;
+  p.dimy = nc->margin_t;
+  p.dimx = nc->margin_l;
   const int count = (nc->lfdimx > p.dimx ? nc->lfdimx : p.dimx) *
                     (nc->lfdimy > p.dimy ? nc->lfdimy : p.dimy);
   p.crender = malloc(count * sizeof(*p.crender));
@@ -1232,7 +1224,9 @@ int notcurses_refresh(notcurses* nc, int* restrict dimy, int* restrict dimx){
   return 0;
 }
 
-int notcurses_render_to_file(notcurses* nc, FILE* fp){
+int ncpile_render_to_file(ncplane* n, FILE* fp){
+  notcurses* nc = ncplane_notcurses(n);
+  ncpile* p = ncplane_pile(n);
   if(nc->lfdimx == 0 || nc->lfdimy == 0){
     return 0;
   }
@@ -1242,23 +1236,20 @@ int notcurses_render_to_file(notcurses* nc, FILE* fp){
   if(out == NULL){
     return -1;
   }
-  ncpile p;
-  p.dimy = nc->stdplane->leny;
-  p.dimx = nc->stdplane->lenx;
-  const int count = (nc->lfdimx > p.dimx ? nc->lfdimx : p.dimx) *
-                    (nc->lfdimy > p.dimy ? nc->lfdimy : p.dimy);
-  p.crender = malloc(count * sizeof(*p.crender));
-  if(p.crender == NULL){
+  const int count = (nc->lfdimx > p->dimx ? nc->lfdimx : p->dimx) *
+                    (nc->lfdimy > p->dimy ? nc->lfdimy : p->dimy);
+  p->crender = malloc(count * sizeof(*p->crender));
+  if(p->crender == NULL){
     fclose(out);
     free(rastered);
     return -1;
   }
-  init_rvec(p.crender, count);
+  init_rvec(p->crender, count);
   for(int i = 0 ; i < count ; ++i){
-    p.crender[i].s.damaged = 1;
+    p->crender[i].s.damaged = 1;
   }
-  int ret = raster_and_write(nc, &p, out);
-  free(p.crender);
+  int ret = raster_and_write(nc, p, out);
+  free(p->crender);
   if(ret > 0){
     if(fprintf(fp, "%s", rastered) == ret){
       ret = 0;
@@ -1271,6 +1262,9 @@ int notcurses_render_to_file(notcurses* nc, FILE* fp){
   return ret;
 }
 
+int notcurses_render_to_file(notcurses* nc, FILE* fp){
+  return ncpile_render_to_file(notcurses_stdplane(nc), fp);
+}
 
 // We execute the painter's algorithm, starting from our topmost plane. The
 // damagevector should be all zeros on input. On success, it will reflect
@@ -1278,13 +1272,13 @@ int notcurses_render_to_file(notcurses* nc, FILE* fp){
 // down the z-buffer, looking at intersections with ncplanes. This implies
 // locking down the EGC, the attributes, and the channels for each cell.
 static void
-ncpile_render_internal(ncplane* n, struct crender* rvec, int leny, int lenx,
-                       int absy, int absx){
+ncpile_render_internal(ncplane* n, struct crender* rvec, int leny, int lenx){
+//fprintf(stderr, "rendering %dx%d\n", leny, lenx);
   ncpile* np = ncplane_pile(n);
   ncplane* p = np->top;
   sprixel* sprixel_list = NULL;
   while(p){
-    paint(p, rvec, leny, lenx, absy, absx, &sprixel_list);
+    paint(p, rvec, leny, lenx, 0, 0, &sprixel_list);
     p = p->below;
   }
   if(sprixel_list){
@@ -1355,10 +1349,7 @@ int ncpile_render(ncplane* n){
   if(engorge_crender_vector(pile)){
     return -1;
   }
-  // FIXME notcurses_stdplane() doesn't belong here
-  ncpile_render_internal(n, pile->crender, pile->dimy, pile->dimx,
-                         notcurses_stdplane(nc)->absy,
-                         notcurses_stdplane(nc)->absx);
+  ncpile_render_internal(n, pile->crender, pile->dimy, pile->dimx);
   clock_gettime(CLOCK_MONOTONIC, &renderdone);
   pthread_mutex_lock(&nc->statlock);
   update_render_stats(&renderdone, &start, &nc->stats);
@@ -1381,12 +1372,14 @@ int notcurses_render(notcurses* nc){
 // for now, we just run the top half of notcurses_render(), and copy out the
 // memstream from within rstate. we want to allocate our own here, and return
 // it, to avoid the copy, but we need feed the params through to do so FIXME.
-int notcurses_render_to_buffer(notcurses* nc, char** buf, size_t* buflen){
-  ncplane* stdn = notcurses_stdplane(nc);
-  if(ncpile_render(stdn)){
+int ncpile_render_to_buffer(ncplane* p, char** buf, size_t* buflen){
+  if(ncpile_render(p)){
     return -1;
   }
-  int bytes = notcurses_rasterize_inner(nc, ncplane_pile(stdn), nc->rstate.mstreamfp);
+  notcurses* nc = ncplane_notcurses(p);
+  unsigned useasu = false; // no ASU to file
+  fseeko(nc->rstate.mstreamfp, 0, SEEK_SET);
+  int bytes = notcurses_rasterize_inner(nc, ncplane_pile(p), nc->rstate.mstreamfp, &useasu);
   pthread_mutex_lock(&nc->statlock);
   update_render_bytes(&nc->stats, bytes);
   pthread_mutex_unlock(&nc->statlock);
@@ -1399,6 +1392,10 @@ int notcurses_render_to_buffer(notcurses* nc, char** buf, size_t* buflen){
   }
   *buflen = nc->rstate.mstrsize;
   return 0;
+}
+
+int notcurses_render_to_buffer(notcurses* nc, char** buf, size_t* buflen){
+  return ncpile_render_to_buffer(notcurses_stdplane(nc), buf, buflen);
 }
 
 // copy the UTF8-encoded EGC out of the cell, whether simple or complex. the
@@ -1417,6 +1414,9 @@ char* notcurses_at_yx(notcurses* nc, int yoff, int xoff, uint16_t* stylemask, ui
     if(yoff >= 0 && yoff < nc->lfdimy){
       if(xoff >= 0 || xoff < nc->lfdimx){
         const nccell* srccell = &nc->lastframe[yoff * nc->lfdimx + xoff];
+        if(nccell_wide_right_p(srccell)){
+          return notcurses_at_yx(nc, yoff, xoff - 1, stylemask, channels);
+        }
         if(stylemask){
           *stylemask = srccell->stylemask;
         }
@@ -1435,13 +1435,11 @@ int ncdirect_set_bg_rgb(ncdirect* nc, unsigned rgb){
   if(rgb > 0xffffffu){
     return -1;
   }
-  // FIXME need verify we're not palette, either
-  if(!ncdirect_bg_default_p(nc) && ncchannels_bg_rgb(nc->channels) == rgb){
+  if(!ncdirect_bg_default_p(nc) && !ncdirect_bg_palindex_p(nc)
+     && ncchannels_bg_rgb(nc->channels) == rgb){
     return 0;
   }
-  if(term_bg_rgb8(nc->tcache.RGBflag, nc->tcache.setab, nc->tcache.colors, nc->ttyfp,
-                  (rgb & 0xff0000u) >> 16u, (rgb & 0xff00u) >> 8u, rgb & 0xffu,
-                  nc->tcache.bg_collides_default)){
+  if(term_bg_rgb8(&nc->tcache, nc->ttyfp, (rgb & 0xff0000u) >> 16u, (rgb & 0xff00u) >> 8u, rgb & 0xffu)){
     return -1;
   }
   ncchannels_set_bg_rgb(&nc->channels, rgb);
@@ -1452,25 +1450,26 @@ int ncdirect_set_fg_rgb(ncdirect* nc, unsigned rgb){
   if(rgb > 0xffffffu){
     return -1;
   }
-  // FIXME need verify we're not palette, either
-  if(!ncdirect_fg_default_p(nc) && ncchannels_fg_rgb(nc->channels) == rgb){
+  if(!ncdirect_fg_default_p(nc) && !ncdirect_fg_palindex_p(nc)
+     && ncchannels_fg_rgb(nc->channels) == rgb){
     return 0;
   }
-  if(term_fg_rgb8(nc->tcache.RGBflag, nc->tcache.setaf, nc->tcache.colors, nc->ttyfp,
-                  (rgb & 0xff0000u) >> 16u, (rgb & 0xff00u) >> 8u, rgb & 0xffu)){
+  if(term_fg_rgb8(&nc->tcache, nc->ttyfp, (rgb & 0xff0000u) >> 16u, (rgb & 0xff00u) >> 8u, rgb & 0xffu)){
     return -1;
   }
   ncchannels_set_fg_rgb(&nc->channels, rgb);
   return 0;
 }
 
+int notcurses_cursor_yx(notcurses* nc, int* y, int* x){
+  *y = nc->rstate.y;
+  *x = nc->rstate.x;
+  return 0;
+}
+
 int notcurses_cursor_enable(notcurses* nc, int y, int x){
   if(y < 0 || x < 0){
-    logerror(nc, "Illegal cursor placement: %d, %d\n", y, x);
-    return -1;
-  }
-  if(y >= nc->stdplane->leny || x >= nc->stdplane->lenx){
-    logerror(nc, "Illegal cursor placement: %d, %d\n", y, x);
+    logerror("Illegal cursor placement: %d, %d\n", y, x);
     return -1;
   }
   // if we're already at the demanded location, we must already be visible, and
@@ -1478,10 +1477,12 @@ int notcurses_cursor_enable(notcurses* nc, int y, int x){
   if(nc->cursory == y && nc->cursorx == x){
     return 0;
   }
-  if(nc->ttyfd < 0 || !nc->tcache.cnorm){
+  const char* cnorm = get_escape(&nc->tcache, ESCAPE_CNORM);
+  if(nc->ttyfd < 0 || !cnorm){
     return -1;
   }
-  if(goto_location(nc, nc->ttyfp, y + nc->stdplane->absy, x + nc->stdplane->absx)){
+  // updates nc->rstate.cursor{y,x}
+  if(goto_location(nc, nc->ttyfp, y + nc->margin_t, x + nc->margin_l)){
     return -1;
   }
   // if we were already positive, we're already visible, no need to write cnorm
@@ -1490,7 +1491,7 @@ int notcurses_cursor_enable(notcurses* nc, int y, int x){
     nc->cursorx = x;
     return 0;
   }
-  if(tty_emit(nc->tcache.cnorm, nc->ttyfd) || fflush(nc->ttyfp) == EOF){
+  if(tty_emit(cnorm, nc->ttyfd) || fflush(nc->ttyfp) == EOF){
     return -1;
   }
   nc->cursory = y;
@@ -1500,12 +1501,13 @@ int notcurses_cursor_enable(notcurses* nc, int y, int x){
 
 int notcurses_cursor_disable(notcurses* nc){
   if(nc->cursorx < 0 || nc->cursory < 0){
-    logerror(nc, "Cursor is not enabled\n");
+    logerror("Cursor is not enabled\n");
     return -1;
   }
   if(nc->ttyfd >= 0){
-    if(nc->tcache.civis){
-      if(!tty_emit(nc->tcache.civis, nc->ttyfd) && !fflush(nc->ttyfp)){
+    const char* cinvis = get_escape(&nc->tcache, ESCAPE_CIVIS);
+    if(cinvis){
+      if(!tty_emit(cinvis, nc->ttyfd) && !fflush(nc->ttyfp)){
         nc->cursory = -1;
         nc->cursorx = -1;
         return 0;

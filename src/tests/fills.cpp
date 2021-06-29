@@ -434,7 +434,7 @@ TEST_CASE("Fills") {
     CHECK(0 == ncplane_cursor_move_yx(p3, 0, 0));
     // make sure glyphs replace glyps
     CHECK(0 < ncplane_putstr(p3, "🞵🞶🞷🞸🞹█▀▄▌▐"));
-    CHECK(0 == ncplane_mergedown_simple(p3, nullptr));
+    CHECK(0 == ncplane_mergedown_simple(p3, n_));
     nccell c3 = CELL_TRIVIAL_INITIALIZER;
     for(int i = 0 ; i < 10 ; ++i){
       CHECK(0 < ncplane_at_yx_cell(n_, 0, i, &cbase));
@@ -444,7 +444,7 @@ TEST_CASE("Fills") {
     CHECK(0 == notcurses_render(nc_));
     // make sure nulls do not replace glyphs
     auto p2 = ncplane_create(n_, &nopts);
-    CHECK(0 == ncplane_mergedown_simple(p2, nullptr));
+    CHECK(0 == ncplane_mergedown_simple(p2, n_));
     ncplane_destroy(p2);
     for(int i = 0 ; i < 10 ; ++i){
       CHECK(0 < ncplane_at_yx_cell(n_, 0, i, &cbase));

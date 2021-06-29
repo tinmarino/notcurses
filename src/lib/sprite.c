@@ -176,6 +176,12 @@ int sprixel_load(sprixel* spx, char* s, int bytes, int pixy, int pixx,
 int sprite_wipe(const notcurses* nc, sprixel* s, int ycell, int xcell){
   int idx = s->dimx * ycell + xcell;
   if(s->n->tam[idx].state == SPRIXCELL_TRANSPARENT){
+    // need to make a transparent auxvec, because a reload will force us to
+    // update said auxvec.
+    s->n->tam[idx].auxvector = nc->tcache.pixel_trans_auxvec(&nc->tcache);
+    if(s->n->tam[idx].auxvector == NULL){
+      return -1;
+    }
     s->n->tam[idx].state = SPRIXCELL_ANNIHILATED_TRANS;
     return 1;
   }
@@ -205,7 +211,7 @@ int sprite_init(const tinfo* t, int fd){
   if(t->pixel_init == NULL){
     return 0;
   }
-  return t->pixel_init(fd);
+  return t->pixel_init(t, fd);
 }
 
 uint8_t* sprixel_auxiliary_vector(const sprixel* s){
@@ -213,6 +219,8 @@ uint8_t* sprixel_auxiliary_vector(const sprixel* s){
   // for now we just do two bytes per pixel. we ought squeeze the transparency
   // vector down to a bit per pixel, rather than a byte FIXME.
   uint8_t* ret = malloc(sizeof(*ret) * pixels * 2);
-  memset(ret, 0, sizeof(*ret) * pixels);
+  if(ret){
+    memset(ret, 0, sizeof(*ret) * pixels);
+  }
   return ret;
 }

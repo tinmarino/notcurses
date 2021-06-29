@@ -106,6 +106,12 @@ typedef enum {
 // registration of these signal handlers.
 #define NCOPTION_NO_QUIT_SIGHANDLERS 0x0008
 
+// Initialize the standard plane's virtual cursor to match the physical cursor
+// at context creation time. Together with NCOPTION_NO_ALTERNATE_SCREEN and a
+// scrolling standard plane, this facilitates easy scrolling-style programs in
+// rendered mode.
+#define NCOPTION_PRESERVE_CURSOR     0x0010ull
+
 // Notcurses typically prints version info in notcurses_init() and performance
 // info in notcurses_stop(). This inhibits that output.
 #define NCOPTION_SUPPRESS_BANNERS    0x0020
@@ -191,14 +197,13 @@ int ncpile_rasterize(struct ncplane* n);
 int notcurses_render(struct notcurses* nc);
 
 // Perform the rendering and rasterization portion of notcurses_render(), but
-// do not write the resulting buffer out to the terminal. Using this function,
-// the user can control the writeout process, and render a second frame while
-// writing another. The returned buffer must be freed by the caller.
-int notcurses_render_to_buffer(struct notcurses* nc, char** buf, size_t* buflen);
+// do not write the resulting buffer out to the terminal. The returned buffer
+// must be freed by the caller.
+int ncpile_render_to_buffer(struct ncplane* p, char** buf, size_t* buflen);
 
 // Write the last rendered frame, in its entirety, to 'fp'. If
 // notcurses_render() has not yet been called, nothing will be written.
-int notcurses_render_to_file(struct notcurses* nc, FILE* fp);
+int ncpile_render_to_file(struct ncplane* p, FILE* fp);
 
 // Retrieve the contents of the specified cell as last rendered. The EGC is
 // returned, or NULL on error. This EGC must be free()d by the caller. The
@@ -260,13 +265,22 @@ notcurses_term_dim_yx(const struct notcurses* n, int* restrict rows,
 // Refresh the physical screen to match what was last rendered (i.e., without
 // reflecting any changes since the last call to notcurses_render()). This is
 // primarily useful if the screen is externally corrupted, or if an
-// NCKEY_RESIZE event has been read and you're not ready to render.
+// NCKEY_RESIZE event has been read and you're not yet ready to render. The
+// current screen geometry is returned in 'y' and 'x', if they are not NULL.
 int notcurses_refresh(struct notcurses* n, int* restrict y, int* restrict x);
 
-// Enable or disable the terminal's cursor, if supported. Immediate effect.
-// It is an error to supply coordinates outside of the standard plane.
-void notcurses_cursor_enable(struct notcurses* nc, int y, int x);
-void notcurses_cursor_disable(struct notcurses* nc);
+// Enable or disable the terminal's cursor, if supported, placing it at
+// 'y', 'x'. Immediate effect (no need for a call to notcurses_render()).
+// It is an error if 'y', 'x' lies outside the standard plane. Can be
+// called while already visible to move the cursor.
+int notcurses_cursor_enable(struct notcurses* nc, int y, int x);
+
+// Get the current location of the terminal's cursor, whether visible or not.
+int notcurses_cursor_yx(struct notcurses* nc, int* y, int* x);
+
+// Disable the hardware cursor. It is an error to call this while the
+// cursor is already disabled.
+int notcurses_cursor_disable(struct notcurses* nc);
 
 // Returns a 16-bit bitmask in the LSBs of supported curses-style attributes
 // (NCSTYLE_UNDERLINE, NCSTYLE_BOLD, etc.) The attribute is only
@@ -400,6 +414,7 @@ int ncdirect_bg_default(struct ncdirect* nc);
 int ncdirect_styles_set(struct ncdirect* n, unsigned stylebits);
 int ncdirect_styles_on(struct ncdirect* n, unsigned stylebits);
 int ncdirect_styles_off(struct ncdirect* n, unsigned stylebits);
+unsigned ncdirect_styles(struct ncdirect* n);
 int ncdirect_clear(struct ncdirect* nc); // clear the screen
 
 // Move the cursor in direct mode. -1 to retain current location on that axis.
@@ -467,7 +482,7 @@ int ncdirect_render_image(struct ncdirect* nc, const char* filename,
 // -- but will only occupy the column of the cursor, and those to the right.
 // To actually write (and free) this, invoke ncdirect_raster_frame(). 'maxx'
 // and 'maxy', if greater than 0, are used for scaling; the terminal's geometry
-// is otherwise used.
+// is otherwise used. It is an error to pass a negative 'maxy' or 'maxx'.
 ncdirectv* ncdirect_render_frame(struct ncdirect* n, const char* filename,
                                  ncblitter_e blitter, ncscale_e scale,
                                  int maxy, int maxx);
@@ -655,13 +670,18 @@ notcurses_getc_blocking(struct notcurses* n, ncinput* ni){
   sigemptyset(&sigmask);
   return notcurses_getc(n, NULL, &sigmask, ni);
 }
+
+static inline bool
+ncinput_nomod_p(const ncinput* ni){
+  return !ni->alt && !ni->ctrl && !ni->shift;
+}
 ```
 
 By default, certain keys are mapped to signals by the terminal's line
 discipline. This can be disabled with `notcurses_linesigs_disable()`, and
 reenabled with `notcurses_linesigs_enable()`.
 
-```
+```c
 // Disable signals originating from the terminal's line discipline, i.e.
 // SIGINT (^C), SIGQUIT (^\), and SIGTSTP (^Z). They are enabled by default.
 int notcurses_linesigs_disable(struct notcurses* n);
@@ -811,9 +831,10 @@ struct ncplane* ncplane_dup(struct ncplane* n, void* opaque);
 // this operation. Do not supply the same plane for both 'src' and 'dst'.
 int ncplane_mergedown(struct ncplane* restrict src, struct ncplane* restrict dst);
 
-// If 'src' does not intersect with 'dst', 'dst' will not be changed, but it is
-// not an error. If 'dst' is NULL, the operation will target the standard plane.
-int ncplane_mergedown_simple(const ncplane* restrict src, ncplane* restrict dst);
+// Merge the entirety of 'src' down onto the ncplane 'dst'. If 'src' does not
+// intersect with 'dst', 'dst' will not be changed, but it is not an error.
+int ncplane_mergedown_simple(struct ncplane* restrict src,
+                             struct ncplane* restrict dst);
 
 // Erase every cell in the ncplane, resetting all attributes to normal, all
 // colors to the default color, and all cells to undrawn. All cells associated
@@ -927,10 +948,8 @@ ncplane_dim_x(const struct ncplane* n){
 
 // Retrieve pixel geometry for the display region ('pxy', 'pxx'), each cell
 // ('celldimy', 'celldimx'), and the maximum displayable bitmap ('maxbmapy',
-// 'maxbmapx'). Note that this will call notcurses_check_pixel_support(),
-// possibly leading to an interrogation of the terminal. If bitmaps are not
-// supported, 'maxbmapy' and 'maxbmapx' will be 0. Any of the geometry
-// arguments may be NULL.
+// 'maxbmapx'). If bitmaps are not supported, 'maxbmapy' and 'maxbmapx' will
+// be 0. Any of the geometry arguments may be NULL.
 void ncplane_pixelgeom(struct ncplane* n, int* restrict pxy, int* restrict pxx,
                        int* restrict celldimy, int* restrict celldimx,
                        int* restrict maxbmapy, int* restrict maxbmapx);
@@ -1031,13 +1050,20 @@ char* ncplane_at_cursor(struct ncplane* n, uint16_t* styles, uint64_t* channels)
 int ncplane_at_cursor_cell(struct ncplane* n, nccell* c);
 
 // Retrieve the current contents of the specified cell. The EGC is returned, or
-// NULL on error. This EGC must be free()d by the caller. The styles and
-// channels are written to 'styles' and 'channels', respectively.
+// NULL on error. This EGC must be free()d by the caller. The stylemask and
+// channels are written to 'stylemask' and 'channels', respectively. The return
+// represents how the cell will be used during rendering, and thus integrates
+// any base cell where appropriate. If called upon the secondary columns of a
+// wide glyph, the EGC will be returned (i.e. this function does not distinguish
+// between the primary and secondary columns of a wide glyph).
 char* ncplane_at_yx(const struct ncplane* n, int y, int x,
-                    uint16_t* styles, uint64_t* channels);
+                    uint16_t* stylemask, uint64_t* channels);
 
 // Retrieve the current contents of the specified cell into 'c'. This cell is
-// invalidated if the associated plane is destroyed.
+// invalidated if the associated plane is destroyed. Returns the number of
+// bytes in the EGC, or -1 on error. Unlike ncplane_at_yx(), when called upon
+// the secondary columns of a wide glyph, the return can be distinguished from
+// the primary column (nccell_wide_right_p(c) will return true).
 int ncplane_at_yx_cell(struct ncplane* n, int y, int x, nccell* c);
 
 // Create an RGBA flat array from the selected region of the ncplane 'nc'.
@@ -1579,7 +1605,7 @@ int ncblit_rgb_loose(const void* data, int linesize,
                      const struct ncvisual_options* vopts, int alpha);
 
 // Same as ncblit_rgba(), but for RGB, with 'alpha' supplied as an alpha value
-// throughout, 0 <= 'alpha' <= 255. linesize ought be a multiple of 3.
+// throughout, 0 <= 'alpha' <= 255.
 int ncblit_rgb_packed(const void* data, int linesize,
                       const struct ncvisual_options* vopts, int alpha);
 
@@ -1810,10 +1836,10 @@ typedef struct nccell {
 #define CELL_BG_PALETTE         0x0000000008000000ull
 #define CELL_FG_PALETTE         (CELL_BG_PALETTE << 32u)
 #define NCCHANNEL_ALPHA_MASK    0x30000000ull
-#define CELL_ALPHA_HIGHCONTRAST 0x30000000ull
-#define CELL_ALPHA_TRANSPARENT  0x20000000ull
-#define CELL_ALPHA_BLEND        0x10000000ull
-#define CELL_ALPHA_OPAQUE       0x00000000ull
+#define NCALPHA_HIGHCONTRAST 0x30000000ull
+#define NCALPHA_TRANSPARENT  0x20000000ull
+#define NCALPHA_BLEND        0x10000000ull
+#define NCALPHA_OPAQUE       0x00000000ull
 ```
 
 `nccell`s must be initialized with an initialization macro or `nccell_init()`
@@ -1875,17 +1901,14 @@ void nccell_release(struct ncplane* n, nccell* c);
 // Get the number of columns occupied by 'c'.
 int nccell_width(const struct ncplane* n, const nccell* c);
 
-#define NCSTYLE_MASK      0x03fful
-#define NCSTYLE_STANDOUT  0x0080ul
-#define NCSTYLE_UNDERLINE 0x0040ul
-#define NCSTYLE_REVERSE   0x0020ul
-#define NCSTYLE_BLINK     0x0010ul
-#define NCSTYLE_DIM       0x0008ul
-#define NCSTYLE_BOLD      0x0004ul
-#define NCSTYLE_INVIS     0x0002ul
-#define NCSTYLE_PROTECT   0x0001ul
-#define NCSTYLE_ITALIC    0x0100ul
-#define NCSTYLE_STRUCK    0x0200ul
+#define NCSTYLE_MASK      0xffffu
+#define NCSTYLE_ITALIC    0x0020u
+#define NCSTYLE_UNDERLINE 0x0010u
+#define NCSTYLE_UNDERCURL 0x0008u
+#define NCSTYLE_BOLD      0x0004u
+#define NCSTYLE_STRUCK    0x0002u
+#define NCSTYLE_BLINK     0x0001u
+#define NCSTYLE_NONE      0
 
 // copy the UTF8-encoded EGC out of the cell, whether simple or complex. the
 // result is not tied to the ncplane, and persists across erases / destruction.
@@ -2866,7 +2889,7 @@ channel_set_alpha(unsigned* channel, unsigned alpha){
     return -1;
   }
   *channel = alpha | (*channel & ~CHANNEL_ALPHA_MASK);
-  if(alpha != CELL_ALPHA_OPAQUE){
+  if(alpha != NCALPHA_OPAQUE){
     *channel |= CELL_BGDEFAULT_MASK;
   }
   return 0;
@@ -2991,7 +3014,7 @@ ncchannels_set_fg_alpha(uint64_t* channels, unsigned alpha){
 // Set the 2-bit alpha component of the background channel.
 static inline int
 ncchannels_set_bg_alpha(uint64_t* channels, unsigned alpha){
-  if(alpha == CELL_ALPHA_HIGHCONTRAST){ // forbidden for background alpha
+  if(alpha == NCALPHA_HIGHCONTRAST){ // forbidden for background alpha
     return -1;
   }
   unsigned channel = ncchannels_bchannel(*channels);
@@ -3066,6 +3089,16 @@ constructed directly from RGBA or BGRA 8bpc memory:
 struct ncvisual* ncvisual_from_rgba(const void* rgba, int rows,
                                     int rowstride, int cols);
 
+// ncvisual_from_rgba(), but the pixels are 4-byte RGBx. A is filled in
+// throughout using 'alpha'. rowstride must be a multiple of 4.
+struct ncvisual* ncvisual_from_rgb_packed(const void* rgba, int rows,
+                                          int rowstride, int cols, int alpha);
+
+// ncvisual_from_rgba(), but the pixels are 3-byte RGB. A is filled in
+// throughout using 'alpha'.
+struct ncvisual* ncvisual_from_rgb_loose(const void* rgba, int rows,
+                                         int rowstride, int cols, int alpha);
+
 // ncvisual_from_rgba(), but for BGRA.
 struct ncvisual* ncvisual_from_bgra(struct notcurses* nc, const void* bgra,
                                     int rows, int rowstride, int cols);
@@ -3106,9 +3139,9 @@ int ncvisual_rotate(struct ncvisual* n, double rads);
 // transformation, unless the size is unchanged.
 int ncvisual_resize(struct ncvisual* n, int rows, int cols);
 
-// Inflate each pixel in the image to 'scale'x'scale' pixels. It is an error
-// if 'scale' is less than 1. The original color is retained.
-int ncvisual_inflate(struct ncvisual* n, int scale);
+// Scale the visual to 'rows' X 'columns' pixels, using non-interpolative
+// (naive) scaling. No new colors will be introduced as a result.
+int ncvisual_resize_noninterpolative(struct ncvisual* n, int rows, int cols);
 
 // Polyfill at the specified location within the ncvisual 'n', using 'rgba'.
 int ncvisual_polyfill_yx(struct ncvisual* n, int y, int x, uint32_t rgba);
@@ -3162,12 +3195,13 @@ int notcurses_lex_blitter(const char* op, ncblitter_e* blitter);
 // Get the name of a blitter.
 const char* notcurses_str_blitter(ncblitter_e blitter);
 
-#define NCVISUAL_OPTION_NODEGRADE  0x0001ull // fail rather than degrade
-#define NCVISUAL_OPTION_BLEND      0x0002ull // use CELL_ALPHA_BLEND with visual
-#define NCVISUAL_OPTION_HORALIGNED 0x0004ull // x is an alignment, not absolute
-#define NCVISUAL_OPTION_VERALIGNED 0x0008ull // y is an alignment, not absolute
-#define NCVISUAL_OPTION_ADDALPHA   0x0010ull // transcolor is transparent
-#define NCVISUAL_OPTION_CHILDPLANE 0x0020ull // new plane is child of n
+#define NCVISUAL_OPTION_NODEGRADE     0x0001ull // fail rather than degrade
+#define NCVISUAL_OPTION_BLEND         0x0002ull // use NCALPHA_BLEND
+#define NCVISUAL_OPTION_HORALIGNED    0x0004ull // x is an alignment, not abs
+#define NCVISUAL_OPTION_VERALIGNED    0x0008ull // y is an alignment, not abs
+#define NCVISUAL_OPTION_ADDALPHA      0x0010ull // transcolor is in effect
+#define NCVISUAL_OPTION_CHILDPLANE    0x0020ull // interpret n as parent
+#define NCVISUAL_OPTION_NOINTERPOLATE 0x0040ull // non-interpolative scaling
 
 struct ncvisual_options {
   // if no ncplane is provided, one will be created using the exact size
@@ -3367,6 +3401,8 @@ typedef struct ncstats {
   uint64_t refreshes;        // refresh requests (non-optimized redraw)
   uint64_t sprixelemissions; // sprixel draw count
   uint64_t sprixelelisions;  // sprixel elision count
+  uint64_t sprixelbytes;     // sprixel bytes emitted
+  uint64_t appsync_updates;  // application-synchronized updates
 
   // current state -- these can decrease
   uint64_t fbbytes;          // total bytes devoted to all active framebuffers

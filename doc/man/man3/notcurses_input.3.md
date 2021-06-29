@@ -1,6 +1,6 @@
 % notcurses_input(3)
 % nick black <nickblack@linux.com>
-% v2.3.0
+% v2.3.7
 
 # NAME
 
@@ -26,6 +26,8 @@ typedef struct ncinput {
 ```
 
 **bool nckey_mouse_p(char32_t ***r***);**
+
+**bool ncinput_nomod_p(const ncinput* ***ni***);**
 
 **char32_t notcurses_getc(struct notcurses* ***n***, const struct timespec* ***ts***, const sigset_t* ***sigmask***, ncinput* ***ni***);**
 

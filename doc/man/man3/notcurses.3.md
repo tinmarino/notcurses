@@ -1,6 +1,6 @@
 % notcurses(3)
 % nick black <nickblack@linux.com>
-% v2.3.0
+% v2.3.7
 
 # NAME
 
@@ -28,7 +28,7 @@ using CMake, a support file is provided, and can be accessed as **Notcurses**
 to link against a minimal Notcurses using **pkg-config --libs notcurses-core**.
 
 **notcurses_init(3)** can then be used to initialize a Notcurses instance for a
-given **FILE** (usually **stdout**, usually attached to a terminal).
+given **FILE*** (usually **stdout**, usually attached to a terminal).
 
 ## Construction
 
@@ -48,6 +48,9 @@ for the actual terminal must be available.
 functionality. This subset is intended to be interleaved with user-generated
 output, and is limited to coloring and styling. Direct mode is documented in
 **notcurses_direct(3)**.
+
+Only one context can be active in a process at a time, whether direct mode
+(**struct ncdirect**) or rendered mode (**struct notcurses**).
 
 ## Output
 
@@ -77,6 +80,8 @@ Those planes which are not bound to some other plane constitute the root planes
 of a pile. A pile is destroyed when all its planes are destroyed, or moved to
 other piles. Since the standard plane (see below) always exists, and cannot be
 moved to another pile, one pile always exists, known as the standard pile.
+
+Note that rasterizing a pile will replace all content within its margins.
 
 ## Ncplanes
 

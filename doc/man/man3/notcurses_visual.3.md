@@ -1,6 +1,6 @@
 % notcurses_visual(3)
 % nick black <nickblack@linux.com>
-% v2.3.0
+% v2.3.7
 
 # NAME
 notcurses_visual - notcurses multimedia
@@ -16,7 +16,6 @@ typedef enum {
   NCSCALE_STRETCH,
   NCSCALE_NONE_HIRES,
   NCSCALE_SCALE_HIRES,
-  NCSCALE_INFLATE,
 } ncscale_e;
 
 typedef enum {
@@ -31,12 +30,13 @@ typedef enum {
   NCBLIT_8x1,     // eight vertical levels, (plots)
 } ncblitter_e;
 
-#define NCVISUAL_OPTION_NODEGRADE  0x0001
-#define NCVISUAL_OPTION_BLEND      0x0002
-#define NCVISUAL_OPTION_HORALIGNED 0x0004
-#define NCVISUAL_OPTION_VERALIGNED 0x0008
-#define NCVISUAL_OPTION_ADDALPHA   0x0010
-#define NCVISUAL_OPTION_CHILDPLANE 0x0020
+#define NCVISUAL_OPTION_NODEGRADE     0x0001ull
+#define NCVISUAL_OPTION_BLEND         0x0002ull
+#define NCVISUAL_OPTION_HORALIGNED    0x0004ull
+#define NCVISUAL_OPTION_VERALIGNED    0x0008ull
+#define NCVISUAL_OPTION_ADDALPHA      0x0010ull
+#define NCVISUAL_OPTION_CHILDPLANE    0x0020ull
+#define NCVISUAL_OPTION_NOINTERPOLATE 0x0040ull
 
 struct ncvisual_options {
   struct ncplane* n;
@@ -55,6 +55,10 @@ typedef int (*streamcb)(struct notcurses*, struct ncvisual*, void*);
 **struct ncvisual* ncvisual_from_file(const char* ***file***);**
 
 **struct ncvisual* ncvisual_from_rgba(const void* ***rgba***, int ***rows***, int ***rowstride***, int ***cols***);**
+
+**struct ncvisual* ncvisual_from_rgb_packed(const void* ***rgba***, int ***rows***, int ***rowstride***, int ***cols***, int ***alpha***);**
+
+**struct ncvisual* ncvisual_from_rgb_loose(const void* ***rgba***, int ***rows***, int ***rowstride***, int ***cols***, int ***alpha***);**
 
 **struct ncvisual* ncvisual_from_bgra(const void* ***bgra***, int ***rows***, int ***rowstride***, int ***cols***);**
 
@@ -78,7 +82,7 @@ typedef int (*streamcb)(struct notcurses*, struct ncvisual*, void*);
 
 **int ncvisual_resize(struct ncvisual* ***n***, int ***rows***, int ***cols***);**
 
-**int ncvisual_inflate(struct ncvisual* ***n***, int ***scale***);**
+**int ncvisual_resize_noninterpolative(struct ncvisual* ***n***, int ***rows***, int ***cols***);**
 
 **int ncvisual_polyfill_yx(struct ncvisual* ***n***, int ***y***, int ***x***, uint32_t ***rgba***);**
 
@@ -114,13 +118,13 @@ per frame. **ncvisual_decode_loop** will return to the first frame,
 as if **ncvisual_decode** had never been called.
 
 Once the visual is loaded, it can be transformed using **ncvisual_rotate**,
-**ncvisual_resize**, and **ncvisual_inflate**. These are persistent operations,
-unlike any scaling that takes place at render time. If a subtitle is associated
-with the frame, it can be acquired with **ncvisual_subtitle**.
-**ncvisual_resize** uses the media layer's best scheme to enlarge or shrink the
-original data, typically involving some interpolation. **ncvisual_inflate**
-maps each pixel to ***scale***x***scale*** pixels square, retaining the
-original color; it is an error if ***scale*** is less than one.
+**ncvisual_resize**, and **ncvisual_resize_noninterpolative**. These are
+persistent operations, unlike any scaling that takes place at render time. If a
+subtitle is associated with the frame, it can be acquired with
+**ncvisual_subtitle**. **ncvisual_resize** uses the media layer's best scheme
+to enlarge or shrink the original data, typically involving some interpolation.
+**ncvisual_resize_noninterpolative** performs a naive linear sampling,
+retaining only original colors.
 
 **ncvisual_from_rgba** and **ncvisual_from_bgra** both require a number of
 ***rows***, a number of image columns **cols**, and a virtual row length of
@@ -129,10 +133,14 @@ thus must be at least ***rowstride*** * ***rows*** bytes, of which a
 ***cols*** * ***rows*** * 4-byte subset is used. It is not possible to **mmap(2)** an image
 file and use it directly--decompressed, decoded data is necessary. The
 resulting plane will be ceil(**rows**/2) rows, and **cols** columns.
+
+**ncvisual_from_rgb_packed** performs the same using 3-byte RGB source data.
+**ncvisual_from_rgb_loose** uses 4-byte RGBx source data. Both will fill in
+the alpha component of every target pixel with the specified **alpha**.
+
 **ncvisual_from_plane** requires specification of a rectangle via ***begy***,
-***begx***, ***leny***, and ***lenx***. The only valid characters within this
-region are those used by the **NCBLIT_2x2** blitter, though this may change
-in the future.
+***begx***, ***leny***, and ***lenx***, and also a blitter. The only valid
+glyphs within this region are those used by the specified blitter.
 
 **ncvisual_rotate** executes a rotation of ***rads*** radians, in the clockwise
 (positive) or counterclockwise (negative) direction.
@@ -150,7 +158,9 @@ subsection of the **ncvisual** to render, while ***leny***/***lenx*** specify th
 geometry of same. ***flags*** is a bitfield over:
 
 * **NCVISUAL_OPTION_NODEGRADE** If the specified blitter is not available, fail rather than degrading.
-* **NCVISUAL_OPTION_BLEND**: Render with **CELL_ALPHA_BLEND**.
+* **NCVISUAL_OPTION_BLEND**: Render with **NCALPHA_BLEND**. Not available with
+   **NCBLIT_PIXEL** when using Sixel graphics. When used with **NCBLIT_PIXEL** when
+   using Kitty graphics, the alpha channel is divided by 2 for each pixel.
 * **NCVISUAL_OPTION_HORALIGNED**: Interpret ***x*** as an **ncalign_e**.
 * **NCVISUAL_OPTION_VERALIGNED**: Interpret ***y*** as an **ncalign_e**.
 * **NCVISUAL_OPTION_ADDALPHA**: Interpret the lower 24 bits of ***transcolor***
@@ -179,7 +189,7 @@ section of the image. This might be larger (or smaller) than the visual area.
 ***y*** and ***x*** have different meanings depending on whether or not
 ***n*** is **NULL**. If not (drawing onto a preexisting plane), they specify
 where in the plane to start drawing. If **n** was **NULL** (new plane), they
-specify the origin of the new plane relative to the standard plane. If the
+specify the origin of the new plane relative to the visible area. If the
 ***flags*** field contains **NCVISUAL_OPTION_HORALIGNED**, the ***x*** parameter
 is interpreted as an **ncalign_e** rather than an absolute position. If the
 ***flags*** field contains **NCVISUAL_OPTION_VERALIGNED**, the ***y*** parameter
@@ -226,9 +236,8 @@ instance **NCSCALE_SCALE_HIRES** and a large image), more rows and columns will
 result in more effective resolution.
 
 A string can be transformed to a scaling mode with **notcurses_lex_scalemode**,
-recognizing **stretch**, **scalehi**, **hires**, **scale**, **inflate**, and
-**none**. Conversion in the opposite direction is performed with
-**notcurses_str_scalemode**.
+recognizing **stretch**, **scalehi**, **hires**, **scale**, and **none**.
+Conversion in the opposite direction is performed with **notcurses_str_scalemode**.
 
 Assuming a cell is twice as tall as it is wide, **NCBLIT_1x1** (and indeed
 any NxN blitter) will stretch an image by a factor of 2 in the vertical
@@ -253,14 +262,6 @@ information.
 # PIXEL BLITTING
 
 Some terminals support pixel-based output via one of a number of protocols.
-Checking for bitmap support requires interrogating the terminal and reading a
-response. This takes time, and will never complete if the terminal doesn't
-respond. Notcurses will not do so without an explicit request from the client
-code. Before **NCBLIT_PIXEL** can be used, it is thus necessary to call
-**notcurses_check_pixel_support**. If this function has not successfully
-returned, attempts to use **NCBLIT_PIXEL** will fall back to cell-based
-blitting (or fail, if **NCVISUAL_OPTION_NODEGRADE** is used).
-
 **NCBLIT_PIXEL** has some stringent requirements on the type of planes it can
 be used with; it is usually best to let **ncvisual_render** create the backing
 plane by providing a **NULL** value for **n**. If you must bring your own
@@ -313,7 +314,8 @@ aspect-preserving **NCBLIT_2x1** will be returned. If sextants are available
 
 Multimedia decoding requires that Notcurses be built with either FFmpeg or
 OpenImageIO support. What formats can be decoded is totally dependent on the
-linked library. OpenImageIO does not support subtitles.
+linked library. OpenImageIO does not support subtitles. Functions requiring
+a multimedia backend include **ncvisual_from_file** and **ncvisual_subtitle**.
 
 Sixel documentation can be found at [Dankwiki](https://nick-black.com/dankwiki/index.php?title=Sixel).
 Kitty's graphics protocol is specified in [its documentation](https://sw.kovidgoyal.net/kitty/graphics-protocol.html).
@@ -335,6 +337,10 @@ obstruct a row of cells. This can lead to undesirable redraws and flicker if
 the cells underneath the sprixel change. A sprixel which is both a multiple of
 the cell height and a multiple of six is the most predictable possible sprixel.
 
+When using non-interpolative blitting together with scaling, unless your goal
+includes minimizing the total area required, lower-resolution blitters will
+generally look just as good as higher resolution blitters, and be faster.
+
 # BUGS
 
 Functions which describe rendered state such as **ncplane_at_yx** and
@@ -346,6 +352,9 @@ radians for **rads**, but this will change soon.
 
 **ncvisual_render** should be able to create new planes in piles other than
 the standard pile. This ought become a reality soon.
+
+**ncvisual_stream** currently requires a multimedia engine, which is silly.
+This will change in the near future.
 
 Sprixels interact poorly with multiple planes, and such usage is discouraged.
 This situation might improve in the future.

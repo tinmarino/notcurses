@@ -344,11 +344,11 @@ ncmenu* ncmenu_create(ncplane* n, const ncmenu_options* opts){
     opts = &zeroed;
   }
   if(opts->sectioncount <= 0 || !opts->sections){
-    logerror(ncplane_notcurses(n), "Invalid %d-ary section information\n", opts->sectioncount);
+    logerror("Invalid %d-ary section information\n", opts->sectioncount);
     return NULL;
   }
   if(opts->flags >= (NCMENU_OPTION_HIDING << 1u)){
-    logwarn(ncplane_notcurses(n), "Provided unsupported flags %016jx\n", (uintmax_t)opts->flags);
+    logwarn("Provided unsupported flags %016jx\n", (uintmax_t)opts->flags);
   }
   int totalheight = 1;
   int totalwidth = 2; // start with two-character margin on the left
@@ -383,8 +383,8 @@ ncmenu* ncmenu_create(ncplane* n, const ncmenu_options* opts){
         ret->disablechannels = ret->sectionchannels;
         ncchannels_set_fg_rgb(&ret->disablechannels, 0xdddddd);
         nccell c = CELL_TRIVIAL_INITIALIZER;
-        nccell_set_fg_alpha(&c, CELL_ALPHA_TRANSPARENT);
-        nccell_set_bg_alpha(&c, CELL_ALPHA_TRANSPARENT);
+        nccell_set_fg_alpha(&c, NCALPHA_TRANSPARENT);
+        nccell_set_bg_alpha(&c, NCALPHA_TRANSPARENT);
         ncplane_set_base_cell(ret->ncp, &c);
         nccell_release(ret->ncp, &c);
         if(write_header(ret) == 0){
@@ -396,7 +396,7 @@ ncmenu* ncmenu_create(ncplane* n, const ncmenu_options* opts){
     }
     free(ret);
   }
-  logerror(ncplane_notcurses(n), "Error creating ncmenu\n");
+  logerror("Error creating ncmenu\n");
   return NULL;
 }
 
@@ -415,7 +415,7 @@ int ncmenu_unroll(ncmenu* n, int sectionidx){
     return -1;
   }
   if(sectionidx < 0 || sectionidx >= n->sectioncount){
-    logerror(ncplane_notcurses(n->ncp), "Unrolled invalid sectionidx %d\n", sectionidx);
+    logerror("Unrolled invalid sectionidx %d\n", sectionidx);
     return -1;
   }
   if(n->sections[sectionidx].enabled_item_count <= 0){

@@ -147,7 +147,7 @@ void ncls_thread(const lsContext* ctx) {
       work.pop();
       pthread_mutex_unlock(&mtx);
       auto s = j.dir / j.p;
-      auto faken = ctx->nc.prep_image(s.c_str(), ctx->blitter, ctx->scaling, -1, -1);
+      auto faken = ctx->nc.prep_image(s.c_str(), ctx->blitter, ctx->scaling, 0, 0);
       pthread_mutex_lock(&outmtx);
       std::cout << j.p << '\n';
       if(faken){
@@ -185,8 +185,9 @@ int main(int argc, char* const * argv){
   bool recursedirs = false;
   bool longlisting = false;
   bool dereflinks = false;
+  bool specified_scaling = false;
   ncpp::NCAlign alignment = ncpp::NCAlign::Right;
-  ncblitter_e blitter = NCBLIT_DEFAULT;
+  ncblitter_e blitter = NCBLIT_PIXEL;
   ncscale_e scale = NCSCALE_SCALE_HIRES;
   const struct option opts[] = {
     { "align", 1, nullptr, 'a' },
@@ -227,6 +228,7 @@ int main(int argc, char* const * argv){
                     << optarg << ")" << std::endl;
           usage(std::cerr, argv[0], EXIT_FAILURE);
         }
+        specified_scaling = true;
         break;
       case 'd':
         directories = true;
@@ -266,7 +268,12 @@ int main(int argc, char* const * argv){
     blitter,
     scale,
   };
-  ctx.nc.check_pixel_support();
+  if(blitter == NCBLIT_PIXEL && !specified_scaling){
+    if(ctx.nc.check_pixel_support() > 0){
+      ctx.scaling = NCSCALE_NONE_HIRES;
+    }
+  }
+  ctx.nc.cursor_disable();
   keep_working = true;
   for(auto s = 0u ; s < procs ; ++s){
     threads.emplace_back(std::thread(ncls_thread, &ctx));

@@ -8,11 +8,12 @@ steps:
   image: dankamongmen/unstable_builder:2021-04-22a
   commands:
     - export LANG=en_US.UTF-8
-    - export TERM=vt100
+    - export TERM=xterm
     - mkdir build
     - cd build
     - cmake .. -DCMAKE_BUILD_TYPE=Release -DUSE_QRCODEGEN=on
     - make -j2
+    - ./notcurses-info
     - ctest --output-on-failure
     - make install
     - ldconfig
@@ -50,7 +51,7 @@ steps:
   image: dankamongmen/rawhide:2021-04-22a
   commands:
     - export LANG=en_US.UTF-8
-    - export TERM=vt100
+    - export TERM=xterm
     - mkdir build
     - cd build
     - cmake -DCMAKE_BUILD_TYPE=Release -DUSE_MULTIMEDIA=oiio -DUSE_QRCODEGEN=on ..
@@ -62,6 +63,9 @@ steps:
     - rustc --version
     - cargo build
     - cargo t_all
+    - cd ../cffi
+    - LDFLAGS=-L/usr/local/lib CFLAGS=-I/usr/local/include python3 setup.py sdist build install
+    - cd ../python
     - LDFLAGS=-L/usr/local/lib CFLAGS=-I/usr/local/include python3 setup.py sdist build install
     - env LD_LIBRARY_PATH=/usr/local/lib ./notcurses-pydemo > /dev/null
     - env LD_LIBRARY_PATH=/usr/local/lib ./ncdirect-pydemo > /dev/null
@@ -85,3 +89,5 @@ steps:
     - ldconfig
     - cd ../cffi
     - python3 setup.py sdist build
+    - cd ../python
+    - LDFLAGS=-L/usr/local/lib CFLAGS=-I/usr/local/include python3 setup.py sdist build install

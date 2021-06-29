@@ -124,7 +124,7 @@ int redraw_plot_##T(nc##X##plot* ncp){ \
        direction, drawing egcs from the grid specification, aborting early if \
        we can't draw anything in a given cell. */ \
     T intervalbase = ncp->miny; \
-    const wchar_t* egc = ncp->bset->egcs; \
+    const wchar_t* egc = ncp->bset->plotegcs; \
     bool done = !ncp->bset->fill; \
     for(int y = 0 ; y < dimy ; ++y){ \
       uint64_t channels = 0; \
@@ -204,6 +204,7 @@ int redraw_plot_##T(nc##X##plot* ncp){ \
   if(ncp->printsample){ \
     int lastslot = ncp->slotstart ? ncp->slotstart - 1 : ncp->slotcount - 1; \
     ncplane_set_styles(ncp->ncp, ncp->legendstyle); \
+    ncplane_set_channels(ncp->ncp, ncp->maxchannels); \
     ncplane_printf_aligned(ncp->ncp, 0, NCALIGN_RIGHT, "%ju", (uintmax_t)ncp->slots[lastslot]); \
   } \
   ncplane_home(ncp->ncp); \
@@ -218,16 +219,15 @@ create_##T(nc##X##plot* ncpp, ncplane* n, const ncplot_options* opts, const T mi
     opts = &zeroed; \
   } \
   if(opts->flags >= (NCPLOT_OPTION_PRINTSAMPLE << 1u)){ \
-    logwarn(ncplane_notcurses(n), "Provided unsupported flags %016jx\n", (uintmax_t)opts->flags); \
+    logwarn("Provided unsupported flags %016jx\n", (uintmax_t)opts->flags); \
   } \
-  const notcurses* nc = ncplane_notcurses_const(n); \
   /* if miny == maxy (enabling domain detection), they both must be equal to 0 */ \
   if(miny == maxy && miny){ \
     ncplane_destroy(n); \
     return false; \
   } \
   if(opts->rangex < 0){ \
-    logerror(nc, "Supplied negative independent range %d\n", opts->rangex); \
+    logerror("Supplied negative independent range %d\n", opts->rangex); \
     ncplane_destroy(n); \
     return false; \
   } \
@@ -237,7 +237,7 @@ create_##T(nc##X##plot* ncpp, ncplane* n, const ncplot_options* opts, const T mi
   } \
   /* DETECTMAXONLY can't be used without domain detection */ \
   if(opts->flags & NCPLOT_OPTION_DETECTMAXONLY && (miny != maxy)){ \
-    logerror(nc, "Supplied DETECTMAXONLY without domain detection"); \
+    logerror("Supplied DETECTMAXONLY without domain detection"); \
     ncplane_destroy(n); \
     return false; \
   } \
@@ -415,15 +415,17 @@ void destroy_##T(nc##X##plot* ncpp){ \
 CREATE(uint64_t, u)
 CREATE(double, d)
 
+// takes ownership of n on all paths
 ncuplot* ncuplot_create(ncplane* n, const ncplot_options* opts, uint64_t miny, uint64_t maxy){
   ncuplot* ret = malloc(sizeof(*ret));
-  if(ret){
-    memset(ret, 0, sizeof(*ret));
-    if(create_uint64_t(ret, n, opts, miny, maxy, 0, UINT64_MAX)){
-      return ret;
-    }
+  if(ret == NULL){
+    ncplane_destroy(n);
+    return NULL;
+  }
+  memset(ret, 0, sizeof(*ret));
+  if(!create_uint64_t(ret, n, opts, miny, maxy, 0, UINT64_MAX)){
     free(ret);
-    ret = NULL;
+    return NULL;
   }
   return ret;
 }
@@ -447,15 +449,17 @@ void ncuplot_destroy(ncuplot* n){
   }
 }
 
+// takes ownership of n on all paths
 ncdplot* ncdplot_create(ncplane* n, const ncplot_options* opts, double miny, double maxy){
   ncdplot* ret = malloc(sizeof(*ret));
-  if(ret){
-    memset(ret, 0, sizeof(*ret));
-    if(create_double(ret, n, opts, miny, maxy, -DBL_MAX, DBL_MAX)){
-      return ret;
-    }
+  if(ret == NULL){
+    ncplane_destroy(n);
+    return NULL;
+  }
+  memset(ret, 0, sizeof(*ret));
+  if(!create_double(ret, n, opts, miny, maxy, -DBL_MAX, DBL_MAX)){
     free(ret);
-    ret = NULL;
+    return NULL;
   }
   return ret;
 }

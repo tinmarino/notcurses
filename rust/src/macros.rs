@@ -5,11 +5,11 @@
 
 #[allow(unused_imports)]
 // enjoy briefer doc comments
-use crate::{NcDirect, NcError, NcResult, Notcurses, NCRESULT_ERR, NCRESULT_OK};
+use crate::{Nc, NcDirect, NcError, NcPlane, NcResult, NCRESULT_ERR, NCRESULT_OK};
 
 // Sleep, Render & Flush Macros ------------------------------------------------
 
-/// Sleeps for `$ns` seconds + `$ms` milliseconds
+/// Sleeps for `$s` seconds + `$ms` milliseconds
 /// + `$us` microseconds + `$ns` nanoseconds
 #[macro_export]
 macro_rules! sleep {
@@ -32,17 +32,16 @@ macro_rules! sleep {
     };
 }
 
-/// [`Notcurses.render`][Notcurses#method.render]\(`$nc`\)? plus [`sleep!`]`[$sleep_args]`.
+/// [`Nc.render`][Nc#method.render]\(`$nc`\)? + [`sleep!`]`[$sleep_args]`.
 ///
-/// Renders the `$nc` [Notcurses] object and, if there's no error,
-/// calls the sleep macro with the rest of the arguments.
+/// Renders the `$nc` [`Nc`] object's standard plane pile and then,
+/// if there's no error, calls the sleep macro with the rest of the arguments.
 ///
 /// Returns [NcResult].
 #[macro_export]
 macro_rules! rsleep {
     ($nc:expr, $( $sleep_args:expr),+ ) => {
-        // Rust style, with methods & NcResult
-        Notcurses::render($nc)?;
+        crate::Nc::render($nc)?;
         sleep![$( $sleep_args ),+];
     };
     ($nc:expr, $( $sleep_args:expr),+ ,) => {
@@ -50,7 +49,27 @@ macro_rules! rsleep {
     };
 }
 
-/// [`NcDirect.flush`][NcDirect#method.flush]\(`$ncd`\)? plus [`sleep!`]`[$sleep_args]`.
+/// [`NcPlane.render`][NcPlane#method.render]\(`$p`\)? +
+/// [`NcPlane.rasterize`][NcPlane#method.rasterize]\(`$p`\)? +
+/// [`sleep!`]`[$sleep_args]`.
+///
+/// Renders and rasterizes the `$p` [NcPlane] pile and then, if there are
+/// no errors, calls the sleep macro with the rest of the arguments.  
+///
+/// Returns [NcResult].
+#[macro_export]
+macro_rules! prsleep {
+    ($p:expr, $( $sleep_args:expr),+ ) => {
+        crate::NcPlane::render($p)?;
+        crate::NcPlane::rasterize($p)?;
+        sleep![$( $sleep_args ),+];
+    };
+    ($nc:expr, $( $sleep_args:expr),+ ,) => {
+        rsleep![$nc, $( $sleep_args ),* ]
+    };
+}
+
+/// [`NcDirect.flush`][NcDirect#method.flush]\(`$ncd`\)? + [`sleep!`]`[$sleep_args]`.
 ///
 /// Flushes the `$ncd` [NcDirect] object and, if there's no error,
 /// calls the sleep macro with the rest of the arguments.
@@ -60,7 +79,7 @@ macro_rules! rsleep {
 macro_rules! fsleep {
     ($ncd:expr, $( $sleep_args:expr),+ ) => {
         // Rust style, with methods & NcResult
-        NcDirect::flush($ncd)?;
+        crate::NcDirect::flush($ncd)?;
         sleep![$( $sleep_args ),+];
     };
     ($ncd:expr, $( $sleep_args:expr),+ ,) => {
@@ -72,6 +91,7 @@ macro_rules! fsleep {
 
 /// Converts an `&str` into `*const c_char`.
 #[macro_export]
+#[doc(hidden)]
 macro_rules! cstring {
     ($s:expr) => {
         std::ffi::CString::new($s).unwrap().as_ptr();
@@ -80,6 +100,7 @@ macro_rules! cstring {
 
 /// Converts an `&str` into `*mut c_char`.
 #[macro_export]
+#[doc(hidden)]
 macro_rules! cstring_mut {
     ($s:expr) => {
         std::ffi::CString::new($s).unwrap().into_raw();
@@ -88,6 +109,7 @@ macro_rules! cstring_mut {
 
 /// Converts a `*const c_char` into an `&str`.
 #[macro_export]
+#[doc(hidden)]
 macro_rules! rstring {
     ($s:expr) => {
         unsafe { std::ffi::CStr::from_ptr($s).to_str().unwrap() }
@@ -98,6 +120,7 @@ macro_rules! rstring {
 
 /// Wrapper around [libc::printf].
 #[macro_export]
+#[doc(hidden)]
 macro_rules! printf {
     ($s:expr) => {
         unsafe { libc::printf(cstring![$s]) }
@@ -119,6 +142,7 @@ macro_rules! printf {
 /// `$ok` & `$msg` are optional. By default they will be the unit
 /// type `()`, and an empty `&str` `""`, respectively.
 #[macro_export]
+#[doc(hidden)]
 macro_rules! error {
     ($res:expr, $msg:expr, $ok:expr) => {{
         let res = $res;
@@ -145,6 +169,7 @@ macro_rules! error {
 ///
 /// `$msg` is optional. By default it will be an empty `&str` `""`.
 #[macro_export]
+#[doc(hidden)]
 macro_rules! error_ref {
     ($ptr:expr, $msg:expr, $ok:expr) => {{
         let ptr = $ptr; // avoid calling a function multiple times
@@ -174,6 +199,7 @@ macro_rules! error_ref {
 ///
 /// `$msg` is optional. By default it will be an empty `&str` `""`.
 #[macro_export]
+#[doc(hidden)]
 macro_rules! error_ref_mut {
     ($ptr:expr, $msg:expr, $ok:expr) => {{
         let ptr = $ptr; // avoid calling a function multiple times
@@ -203,6 +229,7 @@ macro_rules! error_ref_mut {
 ///
 /// `$msg` is optional. By default it will be an empty `&str` `""`.
 #[macro_export]
+#[doc(hidden)]
 macro_rules! error_str {
     ($str:expr, $msg:expr) => {
         if !$str.is_null() {

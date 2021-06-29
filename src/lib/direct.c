@@ -1,16 +1,22 @@
+#include "version.h"
+#include "builddef.h"
 #include <ncurses.h> // needed for some definitions, see terminfo(3ncurses)
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
 #include <termios.h>
+#ifdef USE_READLINE
 #include <readline/readline.h>
+#endif
 #include "version.h"
 #include "visual-details.h"
 #include "notcurses/direct.h"
 #include "internal.h"
 
-int ncdirect_putstr(ncdirect* nc, uint64_t channels, const char* utf8){
+// conform to the foreground and background channels of 'channels'
+static int
+activate_channels(ncdirect* nc, uint64_t channels){
   if(ncchannels_fg_default_p(channels)){
     if(ncdirect_set_fg_default(nc)){
       return -1;
@@ -33,12 +39,19 @@ int ncdirect_putstr(ncdirect* nc, uint64_t channels, const char* utf8){
   }else if(ncdirect_set_bg_rgb(nc, ncchannels_bg_rgb(channels))){
     return -1;
   }
+  return 0;
+}
+
+int ncdirect_putstr(ncdirect* nc, uint64_t channels, const char* utf8){
+  if(activate_channels(nc, channels)){
+    return -1;
+  }
   return fprintf(nc->ttyfp, "%s", utf8);
 }
 
 static int
-cursor_yx_get(int ttyfd, int* y, int* x){
-  if(writen(ttyfd, "\033[6n", 4) != 4){
+cursor_yx_get(int ttyfd, const char* u7, int* y, int* x){
+  if(tty_emit(u7, ttyfd)){
     return -1;
   }
   bool done = false;
@@ -107,10 +120,11 @@ int ncdirect_cursor_up(ncdirect* nc, int num){
   if(num == 0){
     return 0;
   }
-  if(!nc->tcache.cuu){
-    return -1;
+  const char* cuu = get_escape(&nc->tcache, ESCAPE_CUU);
+  if(cuu){
+    return term_emit(tiparm(cuu, num), nc->ttyfp, false);
   }
-  return term_emit(tiparm(nc->tcache.cuu, num), nc->ttyfp, false);
+  return -1;
 }
 
 int ncdirect_cursor_left(ncdirect* nc, int num){
@@ -120,10 +134,11 @@ int ncdirect_cursor_left(ncdirect* nc, int num){
   if(num == 0){
     return 0;
   }
-  if(!nc->tcache.cub){
-    return -1;
+  const char* cub = get_escape(&nc->tcache, ESCAPE_CUB);
+  if(cub){
+    return term_emit(tiparm(cub, num), nc->ttyfp, false);
   }
-  return term_emit(tiparm(nc->tcache.cub, num), nc->ttyfp, false);
+  return -1;
 }
 
 int ncdirect_cursor_right(ncdirect* nc, int num){
@@ -133,16 +148,17 @@ int ncdirect_cursor_right(ncdirect* nc, int num){
   if(num == 0){
     return 0;
   }
-  if(!nc->tcache.cuf){ // FIXME fall back to cuf1
-    return -1;
+  const char* cuf = get_escape(&nc->tcache, ESCAPE_CUF);
+  if(cuf){
+    return term_emit(tiparm(cuf, num), nc->ttyfp, false);
   }
-  return term_emit(tiparm(nc->tcache.cuf, num), nc->ttyfp, false);
+  return -1; // FIXME fall back to cuf1?
 }
 
 // if we're on the last line, we need some scrolling action. rather than
-// merely using cud, we emit vertical tabs. this has the peculiar property
-// (in all terminals tested) of scrolling when necessary but performing no
-// carriage return -- a pure line feed.
+// merely using cud (which doesn't reliably scroll), we emit vertical tabs.
+// this has the peculiar property (in all terminals tested) of scrolling when
+// necessary but performing no carriage return -- a pure line feed.
 int ncdirect_cursor_down(ncdirect* nc, int num){
   if(num < 0){
     return -1;
@@ -161,16 +177,17 @@ int ncdirect_cursor_down(ncdirect* nc, int num){
 }
 
 int ncdirect_clear(ncdirect* nc){
-  if(!nc->tcache.clearscr){
-    return -1; // FIXME scroll output off the screen
+  const char* clearscr = get_escape(&nc->tcache, ESCAPE_CLEAR);
+  if(clearscr){
+    return term_emit(clearscr, nc->ttyfp, true);
   }
-  return term_emit(nc->tcache.clearscr, nc->ttyfp, true);
+  return -1;
 }
 
-int ncdirect_dim_x(const ncdirect* nc){
+int ncdirect_dim_x(ncdirect* nc){
   int x;
   if(nc->ctermfd >= 0){
-    if(update_term_dimensions(nc->ctermfd, NULL, &x, NULL) == 0){
+    if(update_term_dimensions(nc->ctermfd, NULL, &x, &nc->tcache, 0) == 0){
       return x;
     }
   }else{
@@ -179,10 +196,10 @@ int ncdirect_dim_x(const ncdirect* nc){
   return -1;
 }
 
-int ncdirect_dim_y(const ncdirect* nc){
+int ncdirect_dim_y(ncdirect* nc){
   int y;
   if(nc->ctermfd >= 0){
-    if(update_term_dimensions(nc->ctermfd, &y, NULL, NULL) == 0){
+    if(update_term_dimensions(nc->ctermfd, &y, NULL, &nc->tcache, 0) == 0){
       return y;
     }
   }else{
@@ -192,17 +209,19 @@ int ncdirect_dim_y(const ncdirect* nc){
 }
 
 int ncdirect_cursor_enable(ncdirect* nc){
-  if(!nc->tcache.cnorm){
-    return -1;
+  const char* cnorm = get_escape(&nc->tcache, ESCAPE_CNORM);
+  if(cnorm){
+    return term_emit(cnorm, nc->ttyfp, true);
   }
-  return term_emit(nc->tcache.cnorm, nc->ttyfp, true);
+  return -1;
 }
 
 int ncdirect_cursor_disable(ncdirect* nc){
-  if(!nc->tcache.civis){
-    return -1;
+  const char* cinvis = get_escape(&nc->tcache, ESCAPE_CIVIS);
+  if(cinvis){
+    return term_emit(cinvis, nc->ttyfp, true);
   }
-  return term_emit(nc->tcache.civis, nc->ttyfp, true);
+  return -1;
 }
 
 // if we're lacking hpa/vpa, *and* -1 is passed for one of x/y, *and* we've
@@ -211,36 +230,40 @@ int ncdirect_cursor_disable(ncdirect* nc){
 // tests under TERM=vt100. if we need to truly rigourize things, we could
 // cub/cub1 the width or cuu/cuu1 the height, then cuf/cub back? FIXME
 int ncdirect_cursor_move_yx(ncdirect* n, int y, int x){
+  const char* hpa = get_escape(&n->tcache, ESCAPE_HPA);
+  const char* vpa = get_escape(&n->tcache, ESCAPE_VPA);
+  const char* u7 = get_escape(&n->tcache, ESCAPE_DSRCPR);
   if(y == -1){ // keep row the same, horizontal move only
-    if(n->tcache.hpa){
-      return term_emit(tiparm(n->tcache.hpa, x), n->ttyfp, false);
-    }else if(n->ctermfd >= 0){
-      if(cursor_yx_get(n->ctermfd, &y, NULL)){
+    if(hpa){
+      return term_emit(tiparm(hpa, x), n->ttyfp, false);
+    }else if(n->ctermfd >= 0 && u7){
+      if(cursor_yx_get(n->ctermfd, u7, &y, NULL)){
         return -1;
       }
     }else{
       y = 0;
     }
   }else if(x == -1){ // keep column the same, vertical move only
-    if(!n->tcache.vpa){
-      return term_emit(tiparm(n->tcache.vpa, y), n->ttyfp, false);
-    }else if(n->ctermfd >= 0){
-      if(cursor_yx_get(n->ctermfd, NULL, &x)){
+    if(!vpa){
+      return term_emit(tiparm(vpa, y), n->ttyfp, false);
+    }else if(n->ctermfd >= 0 && u7){
+      if(cursor_yx_get(n->ctermfd, u7, NULL, &x)){
         return -1;
       }
     }else{
       x = 0;
     }
   }
-  if(n->tcache.cup){
-    return term_emit(tiparm(n->tcache.cup, y, x), n->ttyfp, false);
-  }else if(n->tcache.vpa && n->tcache.hpa){
-    if(term_emit(tiparm(n->tcache.hpa, x), n->ttyfp, false) == 0 &&
-       term_emit(tiparm(n->tcache.vpa, y), n->ttyfp, false) == 0){
+  const char* cup = get_escape(&n->tcache, ESCAPE_CUP);
+  if(cup){
+    return term_emit(tiparm(cup, y, x), n->ttyfp, false);
+  }else if(vpa && hpa){
+    if(term_emit(tiparm(hpa, x), n->ttyfp, false) == 0 &&
+       term_emit(tiparm(vpa, y), n->ttyfp, false) == 0){
       return 0;
     }
   }
-  return -1;
+  return -1; // we will not be moving the cursor today
 }
 
 // an algorithm to detect inverted cursor reporting on terminals 2x2 or larger:
@@ -259,27 +282,47 @@ int ncdirect_cursor_move_yx(ncdirect* n, int y, int x){
 //    the change. the row ought have decreased; the column ought have increased.
 //  * move back to intiial position / pop cursor position
 static int
-detect_cursor_inversion(ncdirect* n, int rows, int cols, int* y, int* x){
+detect_cursor_inversion(ncdirect* n, const char* u7, int rows, int cols, int* y, int* x){
   if(rows <= 1 || cols <= 1){ // FIXME can this be made to work in 1 dimension?
     return -1;
   }
-  if(cursor_yx_get(n->ctermfd, y, x)){
+  if(cursor_yx_get(n->ctermfd, u7, y, x)){
     return -1;
   }
+  // do not use normal ncdirect_cursor_*() commands, because those go to ttyfp
+  // instead of ctermfd. since we always talk directly to the terminal, we need
+  // to move the cursor directly via the terminal.
+  const char* cuu = get_escape(&n->tcache, ESCAPE_CUU);
+  const char* cuf = get_escape(&n->tcache, ESCAPE_CUF);
+  const char* cub = get_escape(&n->tcache, ESCAPE_CUB);
+  // FIXME do we want to use cud here, or \v like above?
+  const char* cud = get_escape(&n->tcache, ESCAPE_CUD);
+  if(!cud || !cub || !cuf || !cuu){
+    return -1;
+  }
+  int movex;
+  int movey;
   if(*x == cols && *y == 1){
-    if(ncdirect_cursor_down(n, 1) || ncdirect_cursor_left(n, 1)){
+    if(tty_emit(tiparm(cud, 1), n->ctermfd)){
       return -1;
     }
+    if(tty_emit(tiparm(cub, 1), n->ctermfd)){
+      return -1;
+    }
+    movex = 1;
+    movey = -1;
   }else{
-    if(ncdirect_cursor_right(n, 1) || ncdirect_cursor_up(n, 1)){
+    if(tty_emit(tiparm(cuu, 1), n->ctermfd)){
       return -1;
     }
-  }
-  if(ncdirect_flush(n)){
-    return -1;
+    if(tty_emit(tiparm(cuf, 1), n->ctermfd)){
+      return -1;
+    }
+    movex = -1;
+    movey = 1;
   }
   int newy, newx;
-  if(cursor_yx_get(n->ctermfd, &newy, &newx)){
+  if(cursor_yx_get(n->ctermfd, u7, &newy, &newx)){
     return -1;
   }
   if(*x == cols && *y == 1){ // need to swap values, since we moved opposite
@@ -287,6 +330,12 @@ detect_cursor_inversion(ncdirect* n, int rows, int cols, int* y, int* x){
     newx = cols;
     *y = newy;
     newy = 1;
+  }
+  if(tty_emit(tiparm(movex == 1 ? cuf : cub, 1), n->ctermfd)){
+    return -1;
+  }
+  if(tty_emit(tiparm(movey == 1 ? cud : cuu, 1), n->ctermfd)){
+    return -1;
   }
   if(*y == newy && *x == newx){
     return -1; // hopelessly broken
@@ -314,17 +363,19 @@ detect_cursor_inversion(ncdirect* n, int rows, int cols, int* y, int* x){
 }
 
 static int
-detect_cursor_inversion_wrapper(ncdirect* n, int* y, int* x){
+detect_cursor_inversion_wrapper(ncdirect* n, const char* u7, int* y, int* x){
+  // if we're not on a real terminal, there's no point in running this
+  if(n->ctermfd < 0){
+    return 0;
+  }
   const int toty = ncdirect_dim_y(n);
   const int totx = ncdirect_dim_x(n);
-  if(ncdirect_cursor_push(n)){
-    return -1; // FIXME work around lack of sc
-  }
-  int ret = detect_cursor_inversion(n, toty, totx, y, x);
-  if(ncdirect_cursor_pop(n)){
-    return -1;
-  }
-  return ret;
+  // there's an argument to be made that this ought be wrapped in sc/rc
+  // (push/pop cursor), rather than undoing itself. problem is, some
+  // terminals lack sc/rc (they need cursor moves to run the detection
+  // algorithm in the first place), and our versions go to ttyfp instead
+  // of ctermfd, as needed by cursor interrogation.
+  return detect_cursor_inversion(n, u7, toty, totx, y, x);
 }
 
 // no terminfo capability for this. dangerous--it involves writing controls to
@@ -334,6 +385,11 @@ int ncdirect_cursor_yx(ncdirect* n, int* y, int* x){
   struct termios termio, oldtermios;
   // this is only meaningful for real terminals
   if(n->ctermfd < 0){
+    return -1;
+  }
+  const char* u7 = get_escape(&n->tcache, ESCAPE_DSRCPR);
+  if(u7 == NULL){
+    fprintf(stderr, "Terminal doesn't support cursor reporting\n");
     return -1;
   }
   if(tcgetattr(n->ctermfd, &termio)){
@@ -357,9 +413,9 @@ int ncdirect_cursor_yx(ncdirect* n, int* y, int* x){
     x = &xval;
   }
   if(!n->detected_cursor_inversion){
-    ret = detect_cursor_inversion_wrapper(n, y, x);
+    ret = detect_cursor_inversion_wrapper(n, u7, y, x);
   }else{
-    ret = cursor_yx_get(n->ctermfd, y, x);
+    ret = cursor_yx_get(n->ctermfd, u7, y, x);
   }
   if(ret == 0){
     if(n->inverted_cursor){
@@ -379,21 +435,23 @@ int ncdirect_cursor_yx(ncdirect* n, int* y, int* x){
 }
 
 int ncdirect_cursor_push(ncdirect* n){
-  if(n->tcache.sc == NULL){
-    return -1;
+  const char* sc = get_escape(&n->tcache, ESCAPE_SC);
+  if(sc){
+    return term_emit(sc, n->ttyfp, false);
   }
-  return term_emit(n->tcache.sc, n->ttyfp, false);
+  return -1;
 }
 
 int ncdirect_cursor_pop(ncdirect* n){
-  if(n->tcache.rc == NULL){
-    return -1;
+  const char* rc = get_escape(&n->tcache, ESCAPE_RC);
+  if(rc){
+    return term_emit(rc, n->ttyfp, false);
   }
-  return term_emit(n->tcache.rc, n->ttyfp, false);
+  return -1;
 }
 
 static inline int
-ncdirect_align(const struct ncdirect* n, ncalign_e align, int c){
+ncdirect_align(struct ncdirect* n, ncalign_e align, int c){
   if(align == NCALIGN_LEFT){
     return 0;
   }
@@ -447,12 +505,12 @@ ncdirect_dump_plane(ncdirect* n, const ncplane* np, int xoff){
       if(egc == NULL){
         return -1;
       }
-      if(ncchannels_fg_alpha(channels) == CELL_ALPHA_TRANSPARENT){
+      if(ncchannels_fg_alpha(channels) == NCALPHA_TRANSPARENT){
         ncdirect_set_fg_default(n);
       }else{
         ncdirect_set_fg_rgb(n, ncchannels_fg_rgb(channels));
       }
-      if(ncchannels_bg_alpha(channels) == CELL_ALPHA_TRANSPARENT){
+      if(ncchannels_bg_alpha(channels) == NCALPHA_TRANSPARENT){
         ncdirect_set_bg_default(n);
       }else{
         ncdirect_set_bg_rgb(n, ncchannels_bg_rgb(channels));
@@ -506,39 +564,51 @@ int ncdirect_raster_frame(ncdirect* n, ncdirectv* ncdv, ncalign_e align){
 }
 
 static ncdirectv*
-ncdirect_render_visual(ncdirect* n, ncvisual* ncv, ncblitter_e blitfxn,
-                       ncscale_e scale, int ymax, int xmax,
-                       uint32_t transcolor){
-  int dimy = ymax > 0 ? ymax : (ncdirect_dim_y(n) - 1);
-  int dimx = xmax > 0 ? xmax : ncdirect_dim_x(n);
-//fprintf(stderr, "OUR DATA: %p rows/cols: %d/%d outsize: %d/%d %d\n", ncv->data, ncv->pixy, ncv->pixx, dimy, dimx, ymax);
-//fprintf(stderr, "render %d/%d to scaling: %d\n", ncv->pixy, ncv->pixx, scale);
-  const struct blitset* bset = rgba_blitter_low(&n->tcache, scale, true, blitfxn);
+ncdirect_render_visual(ncdirect* n, ncvisual* ncv,
+                       const struct ncvisual_options* vopts){
+  struct ncvisual_options defvopts = {};
+  if(!vopts){
+    vopts = &defvopts;
+  }
+  if(vopts->leny < 0 || vopts->lenx < 0){
+    fprintf(stderr, "Invalid render geometry %d/%d\n", vopts->leny, vopts->lenx);
+    return NULL;
+  }
+//fprintf(stderr, "OUR DATA: %p rows/cols: %d/%d outsize: %d/%d %d/%d\n", ncv->data, ncv->pixy, ncv->pixx, dimy, dimx, ymax, xmax);
+//fprintf(stderr, "render %d/%d to scaling: %d\n", ncv->pixy, ncv->pixx, vopts->scaling);
+  const struct blitset* bset = rgba_blitter_low(&n->tcache, vopts->scaling,
+                                                !(vopts->flags & NCVISUAL_OPTION_NODEGRADE),
+                                                vopts->blitter);
   if(!bset){
     return NULL;
   }
+  int ymax = vopts->leny / bset->height;
+  int xmax = vopts->lenx / bset->width;
+  int dimy = vopts->leny > 0 ? ymax : ncdirect_dim_y(n);
+  int dimx = vopts->lenx > 0 ? xmax : ncdirect_dim_x(n);
   int disprows, dispcols, outy;
-  if(scale != NCSCALE_NONE && scale != NCSCALE_NONE_HIRES){
+  if(vopts->scaling != NCSCALE_NONE && vopts->scaling != NCSCALE_NONE_HIRES){
     if(bset->geom != NCBLIT_PIXEL){
       dispcols = dimx * encoding_x_scale(&n->tcache, bset);
-      disprows = dimy * encoding_y_scale(&n->tcache, bset);
+      disprows = dimy * encoding_y_scale(&n->tcache, bset) - 1;
       outy = disprows;
     }else{
       dispcols = dimx * n->tcache.cellpixx;
       disprows = dimy * n->tcache.cellpixy;
-      clamp_to_sixelmax(&n->tcache, &disprows, &dispcols, &outy, scale);
+      clamp_to_sixelmax(&n->tcache, &disprows, &dispcols, &outy, vopts->scaling);
     }
-    if(scale == NCSCALE_SCALE || scale == NCSCALE_SCALE_HIRES){
+    if(vopts->scaling == NCSCALE_SCALE || vopts->scaling == NCSCALE_SCALE_HIRES){
       scale_visual(ncv, &disprows, &dispcols);
+      outy = disprows;
       if(bset->geom == NCBLIT_PIXEL){
-        clamp_to_sixelmax(&n->tcache, &disprows, &dispcols, &outy, scale);
+        clamp_to_sixelmax(&n->tcache, &disprows, &dispcols, &outy, vopts->scaling);
       }
     }
   }else{
     disprows = ncv->pixy;
     dispcols = ncv->pixx;
     if(bset->geom == NCBLIT_PIXEL){
-      clamp_to_sixelmax(&n->tcache, &disprows, &dispcols, &outy, scale);
+      clamp_to_sixelmax(&n->tcache, &disprows, &dispcols, &outy, vopts->scaling);
     }else{
       outy = disprows;
     }
@@ -549,7 +619,8 @@ ncdirect_render_visual(ncdirect* n, ncvisual* ncv, ncblitter_e blitfxn,
       disprows = outy;
     }
   }
-//fprintf(stderr, "render: %d/%d stride %u %p\n", ncv->pixy, ncv->pixx, ncv->pixytride, ncv->data);
+//fprintf(stderr, "max: %d/%d out: %d/%d\n", ymax, xmax, outy, dispcols);
+//fprintf(stderr, "render: %d/%d stride %u %p\n", ncv->pixy, ncv->pixx, ncv->rowstride, ncv->data);
   ncplane_options nopts = {
     .y = 0,
     .x = 0,
@@ -564,12 +635,21 @@ ncdirect_render_visual(ncdirect* n, ncvisual* ncv, ncblitter_e blitfxn,
     nopts.rows = outy / n->tcache.cellpixy + !!(outy % n->tcache.cellpixy);
     nopts.cols = dispcols / n->tcache.cellpixx + !!(dispcols % n->tcache.cellpixx);
   }
+  if(ymax && nopts.rows > ymax){
+    nopts.rows = ymax;
+  }
+  if(xmax && nopts.cols > xmax){
+    nopts.cols = xmax;
+  }
   struct ncplane* ncdv = ncplane_new_internal(NULL, NULL, &nopts);
   if(!ncdv){
     return NULL;
   }
   blitterargs bargs = {};
-  bargs.transcolor = transcolor;
+  bargs.flags = vopts->flags | NCVISUAL_OPTION_SCROLL;
+  if(vopts->flags & NCVISUAL_OPTION_ADDALPHA){
+    bargs.transcolor = vopts->transcolor | 0x1000000ull;
+  }
   if(bset->geom == NCBLIT_PIXEL){
     bargs.u.pixel.celldimx = n->tcache.cellpixx;
     bargs.u.pixel.celldimy = n->tcache.cellpixy;
@@ -590,18 +670,39 @@ ncdirect_render_visual(ncdirect* n, ncvisual* ncv, ncblitter_e blitfxn,
 ncdirectv* ncdirect_render_frame(ncdirect* n, const char* file,
                                  ncblitter_e blitfxn, ncscale_e scale,
                                  int ymax, int xmax){
-  struct ncvisual* ncv = ncvisual_from_file(file);
+  if(ymax < 0 || xmax < 0){
+    return NULL;
+  }
+  ncdirectf* ncv = ncdirectf_from_file(n, file);
   if(ncv == NULL){
     return NULL;
   }
-  ncdirectv* v = ncdirect_render_visual(n, ncv, blitfxn, scale, ymax, xmax, 0);
+  struct ncvisual_options vopts = {};
+  const struct blitset* bset = rgba_blitter_low(&n->tcache, scale, true, blitfxn);
+  if(!bset){
+    return NULL;
+  }
+  vopts.blitter = bset->geom;
+  vopts.flags = NCVISUAL_OPTION_NODEGRADE;
+  vopts.scaling = scale;
+  if(ymax > 0){
+    if((vopts.leny = ymax * bset->height) > ncv->pixy){
+      vopts.leny = 0;
+    }
+  }
+  if(xmax > 0){
+    if((vopts.lenx = xmax * bset->width) > ncv->pixx){
+      vopts.lenx = 0;
+    }
+  }
+  ncdirectv* v = ncdirectf_render(n, ncv, &vopts);
   ncvisual_destroy(ncv);
   return v;
 }
 
 int ncdirect_render_image(ncdirect* n, const char* file, ncalign_e align,
                           ncblitter_e blitfxn, ncscale_e scale){
-  ncdirectv* faken = ncdirect_render_frame(n, file, blitfxn, scale, -1, -1);
+  ncdirectv* faken = ncdirect_render_frame(n, file, blitfxn, scale, 0, 0);
   if(!faken){
     return -1;
   }
@@ -609,17 +710,25 @@ int ncdirect_render_image(ncdirect* n, const char* file, ncalign_e align,
 }
 
 int ncdirect_set_fg_palindex(ncdirect* nc, int pidx){
+  const char* setaf = get_escape(&nc->tcache, ESCAPE_SETAF);
+  if(!setaf){
+    return -1;
+  }
   if(ncchannels_set_fg_palindex(&nc->channels, pidx) < 0){
     return -1;
   }
-  return term_emit(tiparm(nc->tcache.setaf, pidx), nc->ttyfp, false);
+  return term_emit(tiparm(setaf, pidx), nc->ttyfp, false);
 }
 
 int ncdirect_set_bg_palindex(ncdirect* nc, int pidx){
+  const char* setab = get_escape(&nc->tcache, ESCAPE_SETAB);
+  if(!setab){
+    return -1;
+  }
   if(ncchannels_set_bg_palindex(&nc->channels, pidx) < 0){
     return -1;
   }
-  return term_emit(tiparm(nc->tcache.setab, pidx), nc->ttyfp, false);
+  return term_emit(tiparm(setab, pidx), nc->ttyfp, false);
 }
 
 int ncdirect_vprintf_aligned(ncdirect* n, int y, ncalign_e align, const char* fmt, va_list ap){
@@ -654,25 +763,20 @@ ncdirect_stop_minimal(void* vnc){
   ncdirect* nc = vnc;
   int ret = drop_signals(nc);
   if(nc->initialized_readline){
+#ifdef USE_READLINE
     rl_deprep_terminal();
+#endif
   }
-  if(nc->tcache.op && term_emit(nc->tcache.op, nc->ttyfp, true)){
-    ret = -1;
-  }
-  if(nc->tcache.sgr0 && term_emit(nc->tcache.sgr0, nc->ttyfp, true)){
-    ret = -1;
-  }
-  if(nc->tcache.oc && term_emit(nc->tcache.oc, nc->ttyfp, true)){
-    ret = -1;
-  }
+  ret |= reset_term_attributes(&nc->tcache, nc->ttyfp);
   if(nc->ctermfd >= 0){
     if(nc->tcache.pixel_shutdown){
       ret |= nc->tcache.pixel_shutdown(nc->ctermfd);
     }
-    if(nc->tcache.cnorm && tty_emit(nc->tcache.cnorm, nc->ctermfd)){
+    const char* cnorm = get_escape(&nc->tcache, ESCAPE_CNORM);
+    if(cnorm && tty_emit(cnorm, nc->ctermfd)){
       ret = -1;
     }
-    ret |= tcsetattr(nc->ctermfd, TCSANOW, &nc->tpreserved);
+    ret |= tcsetattr(nc->ctermfd, TCSANOW, &nc->tcache.tpreserved);
     ret |= close(nc->ctermfd);
   }
   ret |= ncdirect_flush(nc);
@@ -681,8 +785,8 @@ ncdirect_stop_minimal(void* vnc){
 }
 
 ncdirect* ncdirect_core_init(const char* termtype, FILE* outfp, uint64_t flags){
-  if(flags > (NCDIRECT_OPTION_NO_QUIT_SIGHANDLERS << 1)){ // allow them through with warning
-    logwarn((struct notcurses*)NULL, "Passed unsupported flags 0x%016jx\n", (uintmax_t)flags);
+  if(flags > (NCDIRECT_OPTION_VERY_VERBOSE << 1)){ // allow them through with warning
+    logwarn("Passed unsupported flags 0x%016jx\n", (uintmax_t)flags);
   }
   if(outfp == NULL){
     outfp = stdout;
@@ -695,7 +799,7 @@ ncdirect* ncdirect_core_init(const char* termtype, FILE* outfp, uint64_t flags){
   ret->flags = flags;
   ret->ttyfp = outfp;
   if(!(flags & NCDIRECT_OPTION_INHIBIT_SETLOCALE)){
-    init_lang(NULL);
+    init_lang();
   }
   const char* encoding = nl_langinfo(CODESET);
   bool utf8 = false;
@@ -707,21 +811,17 @@ ncdirect* ncdirect_core_init(const char* termtype, FILE* outfp, uint64_t flags){
     free(ret);
     return NULL;
   }
+  // don't set the loglevel until we've locked in signal handling, lest we
+  // change the loglevel out from under a running instance.
+  if(flags & NCDIRECT_OPTION_VERY_VERBOSE){
+    loglevel = NCLOGLEVEL_TRACE;
+  }else if(flags & NCDIRECT_OPTION_VERBOSE){
+    loglevel = NCLOGLEVEL_WARNING;
+  }else{
+    loglevel = NCLOGLEVEL_SILENT;
+  }
   // we don't need a controlling tty for everything we do; allow a failure here
-  if((ret->ctermfd = get_tty_fd(NULL, ret->ttyfp)) >= 0){
-    if(tcgetattr(ret->ctermfd, &ret->tpreserved)){
-      fprintf(stderr, "Couldn't preserve terminal state for %d (%s)\n", ret->ctermfd, strerror(errno));
-      goto err;
-    }
-    if(!(flags & NCDIRECT_OPTION_INHIBIT_CBREAK)){
-      if(cbreak_mode(ret->ctermfd, &ret->tpreserved)){
-        goto err;
-      }
-    }
-  }
-  if(ncinputlayer_init(&ret->input, stdin)){
-    goto err;
-  }
+  ret->ctermfd = get_tty_fd(ret->ttyfp);
   const char* shortname_term;
   int termerr;
   if(setupterm(termtype, ret->ctermfd, &termerr) != OK){
@@ -729,19 +829,21 @@ ncdirect* ncdirect_core_init(const char* termtype, FILE* outfp, uint64_t flags){
     goto err;
   }
   shortname_term = termname();
+  if(interrogate_terminfo(&ret->tcache, ret->ctermfd, shortname_term, utf8,
+                          1, flags & NCDIRECT_OPTION_INHIBIT_CBREAK,
+                          TERMINAL_UNKNOWN, NULL, NULL)){
+    goto err;
+  }
   if(ncvisual_init(NCLOGLEVEL_SILENT)){
     goto err;
   }
-  if(interrogate_terminfo(&ret->tcache, ret->ctermfd, shortname_term, utf8)){
-    goto err;
-  }
-  update_term_dimensions(ret->ctermfd, NULL, NULL, &ret->tcache);
+  update_term_dimensions(ret->ctermfd, NULL, NULL, &ret->tcache, 0);
   ncdirect_set_styles(ret, 0);
   return ret;
 
 err:
   if(ret->ctermfd >= 0){
-    tcsetattr(ret->ctermfd, TCSANOW, &ret->tpreserved);
+    tcsetattr(ret->ctermfd, TCSANOW, &ret->tcache.tpreserved);
   }
   drop_signals(ret);
   free(ret);
@@ -752,13 +854,13 @@ int ncdirect_stop(ncdirect* nc){
   int ret = 0;
   if(nc){
     ret |= ncdirect_stop_minimal(nc);
-    input_free_esctrie(&nc->input.inputescapes);
     free(nc);
   }
   return ret;
 }
 
 char* ncdirect_readline(ncdirect* n, const char* prompt){
+#ifdef USE_READLINE
   if(!n->initialized_readline){
     rl_outstream = n->ttyfp;
     rl_instream = stdin;
@@ -766,31 +868,43 @@ char* ncdirect_readline(ncdirect* n, const char* prompt){
     n->initialized_readline = true;
   }
   return readline(prompt);
+#else
+  (void)n;
+  (void)prompt;
+  return NULL;
+#endif
 }
 
 static inline int
 ncdirect_style_emit(ncdirect* n, unsigned stylebits, FILE* out){
-  int r = -1;
-  if(stylebits == 0 && n->tcache.sgr0){
-    r = term_emit(n->tcache.sgr0, n->ttyfp, false);
-  }else if(n->tcache.sgr){
-    r = term_emit(tiparm(n->tcache.sgr, stylebits & NCSTYLE_STANDOUT,
-                         stylebits & NCSTYLE_UNDERLINE,
-                         stylebits & NCSTYLE_REVERSE,
-                         stylebits & NCSTYLE_BLINK,
-                         stylebits & NCSTYLE_DIM,
-                         stylebits & NCSTYLE_BOLD,
-                         stylebits & NCSTYLE_INVIS,
-                         stylebits & NCSTYLE_PROTECT, 0), out, false);
-  }
-  // sgr resets colors, so set them back up if not defaults
-  if(r == 0){
-    // FIXME need to handle palette-indexed colors
+  unsigned normalized = 0;
+  int r = coerce_styles(out, &n->tcache, &n->stylemask, stylebits, &normalized);
+  // sgr0 resets colors, so set them back up if not defaults and it was used
+  if(normalized){
+    // emitting an sgr resets colors. if we want to be default, that's no
+    // problem, and our channels remain correct. otherwise, clear our
+    // channel, and set them back up.
     if(!ncdirect_fg_default_p(n)){
-      r |= ncdirect_set_fg_rgb(n, ncchannels_fg_rgb(n->channels));
+      if(!ncdirect_fg_palindex_p(n)){
+        uint32_t fg = ncchannels_fg_rgb(n->channels);
+        ncchannels_set_fg_default(&n->channels);
+        r |= ncdirect_set_fg_rgb(n, fg);
+      }else{ // palette-indexed
+        uint32_t fg = ncchannels_fg_palindex(n->channels);
+        ncchannels_set_fg_default(&n->channels);
+        r |= ncdirect_set_fg_palindex(n, fg);
+      }
     }
     if(!ncdirect_bg_default_p(n)){
-      r |= ncdirect_set_bg_rgb(n, ncchannels_bg_rgb(n->channels));
+      if(!ncdirect_bg_palindex_p(n)){
+        uint32_t bg = ncchannels_bg_rgb(n->channels);
+        ncchannels_set_bg_default(&n->channels);
+        r |= ncdirect_set_bg_rgb(n, bg);
+      }else{ // palette-indexed
+        uint32_t bg = ncchannels_bg_palindex(n->channels);
+        ncchannels_set_bg_default(&n->channels);
+        r |= ncdirect_set_bg_palindex(n, bg);
+      }
     }
   }
   return r;
@@ -804,15 +918,6 @@ int ncdirect_styles_on(ncdirect* n, unsigned stylebits){
 int ncdirect_on_styles(ncdirect* n, unsigned stylebits){
   uint32_t stylemask = n->stylemask | stylebits;
   if(ncdirect_style_emit(n, stylemask, n->ttyfp) == 0){
-    if(term_setstyle(n->ttyfp, n->stylemask, stylemask, NCSTYLE_ITALIC,
-                     n->tcache.italics, n->tcache.italoff)){
-      return 0;
-    }
-    if(term_setstyle(n->ttyfp, n->stylemask, stylemask, NCSTYLE_STRUCK,
-                     n->tcache.struck, n->tcache.struckoff)){
-      return -1;
-    }
-    n->stylemask = stylemask;
     return 0;
   }
   return -1;
@@ -822,19 +927,14 @@ int ncdirect_styles_off(ncdirect* n, unsigned stylebits){
   return ncdirect_off_styles(n, stylebits);
 }
 
+unsigned ncdirect_styles(ncdirect* n){
+  return n->stylemask;
+}
+
 // turn off any specified stylebits
 int ncdirect_off_styles(ncdirect* n, unsigned stylebits){
   uint32_t stylemask = n->stylemask & ~stylebits;
   if(ncdirect_style_emit(n, stylemask, n->ttyfp) == 0){
-    if(term_setstyle(n->ttyfp, n->stylemask, stylemask, NCSTYLE_ITALIC,
-                     n->tcache.italics, n->tcache.italoff)){
-      return -1;
-    }
-    if(term_setstyle(n->ttyfp, n->stylemask, stylemask, NCSTYLE_STRUCK,
-                     n->tcache.struck, n->tcache.struckoff)){
-      return -1;
-    }
-    n->stylemask = stylemask;
     return 0;
   }
   return -1;
@@ -846,36 +946,33 @@ int ncdirect_styles_set(ncdirect* n, unsigned stylebits){
 
 // set the current stylebits to exactly those provided
 int ncdirect_set_styles(ncdirect* n, unsigned stylebits){
-  uint32_t stylemask = stylebits;
-  if(ncdirect_style_emit(n, stylemask, n->ttyfp) == 0){
-    n->stylemask &= !(NCSTYLE_ITALIC | NCSTYLE_STRUCK); // sgr clears both
-    if(term_setstyle(n->ttyfp, n->stylemask, stylemask, NCSTYLE_ITALIC,
-                     n->tcache.italics, n->tcache.italoff)){
-      return -1;
-    }
-    if(term_setstyle(n->ttyfp, n->stylemask, stylemask, NCSTYLE_STRUCK,
-                     n->tcache.struck, n->tcache.struckoff)){
-      return -1;
-    }
-    n->stylemask = stylemask;
-    return 0;
+  if((stylebits & n->tcache.supported_styles) < stylebits){ // unsupported styles
+    return -1;
   }
-  return -1;
+  uint32_t stylemask = stylebits;
+  if(ncdirect_style_emit(n, stylemask, n->ttyfp)){
+    return -1;
+  }
+  return 0;
 }
 
 unsigned ncdirect_palette_size(const ncdirect* nc){
-  return nc->tcache.colors;
+  return ncdirect_capabilities(nc)->colors;
 }
 
 int ncdirect_set_fg_default(ncdirect* nc){
   if(ncdirect_fg_default_p(nc)){
     return 0;
   }
-  if(nc->tcache.fgop){
-    if(term_emit(nc->tcache.fgop, nc->ttyfp, false)){
+  const char* esc;
+  if((esc = get_escape(&nc->tcache, ESCAPE_FGOP)) != NULL){
+    if(term_emit(esc, nc->ttyfp, false)){
       return -1;
     }
-  }else if(term_emit(nc->tcache.op, nc->ttyfp, false) == 0){
+  }else if((esc = get_escape(&nc->tcache, ESCAPE_OP)) != NULL){
+    if(term_emit(esc, nc->ttyfp, false)){
+      return -1;
+    }
     if(!ncdirect_bg_default_p(nc)){
       if(ncdirect_set_bg_rgb(nc, ncchannels_bg_rgb(nc->channels))){
         return -1;
@@ -890,11 +987,15 @@ int ncdirect_set_bg_default(ncdirect* nc){
   if(ncdirect_bg_default_p(nc)){
     return 0;
   }
-  if(nc->tcache.bgop){
-    if(term_emit(nc->tcache.bgop, nc->ttyfp, false)){
+  const char* esc;
+  if((esc = get_escape(&nc->tcache, ESCAPE_BGOP)) != NULL){
+    if(term_emit(esc, nc->ttyfp, false)){
       return -1;
     }
-  }else if(term_emit(nc->tcache.op, nc->ttyfp, false) == 0){
+  }else if((esc = get_escape(&nc->tcache, ESCAPE_OP)) != NULL){
+    if(term_emit(esc, nc->ttyfp, false)){
+      return -1;
+    }
     if(!ncdirect_fg_default_p(nc)){
       if(ncdirect_set_fg_rgb(nc, ncchannels_fg_rgb(nc->channels))){
         return -1;
@@ -927,9 +1028,15 @@ int ncdirect_hline_interp(ncdirect* n, const char* egc, int len,
   int ret;
   bool fgdef = false, bgdef = false;
   if(ncchannels_fg_default_p(c1) && ncchannels_fg_default_p(c2)){
+    if(ncdirect_set_fg_default(n)){
+      return -1;
+    }
     fgdef = true;
   }
   if(ncchannels_bg_default_p(c1) && ncchannels_bg_default_p(c2)){
+    if(ncdirect_set_bg_default(n)){
+      return -1;
+    }
     bgdef = true;
   }
   for(ret = 0 ; ret < len ; ++ret){
@@ -974,9 +1081,15 @@ int ncdirect_vline_interp(ncdirect* n, const char* egc, int len,
   int ret;
   bool fgdef = false, bgdef = false;
   if(ncchannels_fg_default_p(c1) && ncchannels_fg_default_p(c2)){
+    if(ncdirect_set_fg_default(n)){
+      return -1;
+    }
     fgdef = true;
   }
   if(ncchannels_bg_default_p(c1) && ncchannels_bg_default_p(c2)){
+    if(ncdirect_set_bg_default(n)){
+      return -1;
+    }
     bgdef = true;
   }
   for(ret = 0 ; ret < len ; ++ret){
@@ -1018,8 +1131,9 @@ int ncdirect_box(ncdirect* n, uint64_t ul, uint64_t ur,
   unsigned edges;
   edges = !(ctlword & NCBOXMASK_TOP) + !(ctlword & NCBOXMASK_LEFT);
   if(edges >= box_corner_needs(ctlword)){
-    ncdirect_set_fg_rgb(n, ncchannels_fg_rgb(ul));
-    ncdirect_set_bg_rgb(n, ncchannels_bg_rgb(ul));
+    if(activate_channels(n, ul)){
+      return -1;
+    }
     if(fprintf(n->ttyfp, "%lc", wchars[0]) < 0){
       return -1;
     }
@@ -1048,8 +1162,9 @@ int ncdirect_box(ncdirect* n, uint64_t ul, uint64_t ur,
   }
   edges = !(ctlword & NCBOXMASK_TOP) + !(ctlword & NCBOXMASK_RIGHT);
   if(edges >= box_corner_needs(ctlword)){
-    ncdirect_set_fg_rgb(n, ncchannels_fg_rgb(ur));
-    ncdirect_set_bg_rgb(n, ncchannels_bg_rgb(ur));
+    if(activate_channels(n, ur)){
+      return -1;
+    }
     if(fprintf(n->ttyfp, "%lc", wchars[1]) < 0){
       return -1;
     }
@@ -1082,8 +1197,9 @@ int ncdirect_box(ncdirect* n, uint64_t ul, uint64_t ur,
   // bottom line
   edges = !(ctlword & NCBOXMASK_BOTTOM) + !(ctlword & NCBOXMASK_LEFT);
   if(edges >= box_corner_needs(ctlword)){
-    ncdirect_set_fg_rgb(n, ncchannels_fg_rgb(ll));
-    ncdirect_set_bg_rgb(n, ncchannels_bg_rgb(ll));
+    if(activate_channels(n, ll)){
+      return -1;
+    }
     if(fprintf(n->ttyfp, "%lc", wchars[2]) < 0){
       return -1;
     }
@@ -1101,8 +1217,9 @@ int ncdirect_box(ncdirect* n, uint64_t ul, uint64_t ur,
   }
   edges = !(ctlword & NCBOXMASK_BOTTOM) + !(ctlword & NCBOXMASK_RIGHT);
   if(edges >= box_corner_needs(ctlword)){
-    ncdirect_set_fg_rgb(n, ncchannels_fg_rgb(lr));
-    ncdirect_set_bg_rgb(n, ncchannels_bg_rgb(lr));
+    if(activate_channels(n, lr)){
+      return -1;
+    }
     if(fprintf(n->ttyfp, "%lc", wchars[3]) < 0){
       return -1;
     }
@@ -1113,13 +1230,13 @@ int ncdirect_box(ncdirect* n, uint64_t ul, uint64_t ur,
 int ncdirect_rounded_box(ncdirect* n, uint64_t ul, uint64_t ur,
                          uint64_t ll, uint64_t lr,
                          int ylen, int xlen, unsigned ctlword){
-  return ncdirect_box(n, ul, ur, ll, lr, L"╭╮╰╯─│", ylen, xlen, ctlword);
+  return ncdirect_box(n, ul, ur, ll, lr, NCBOXROUNDW, ylen, xlen, ctlword);
 }
 
 int ncdirect_double_box(ncdirect* n, uint64_t ul, uint64_t ur,
                          uint64_t ll, uint64_t lr,
                          int ylen, int xlen, unsigned ctlword){
-  return ncdirect_box(n, ul, ur, ll, lr, L"╔╗╚╝═║", ylen, xlen, ctlword);
+  return ncdirect_box(n, ul, ur, ll, lr, NCBOXDOUBLEW, ylen, xlen, ctlword);
 }
 
 // Can we load images? This requires being built against FFmpeg/OIIO.
@@ -1129,7 +1246,7 @@ bool ncdirect_canopen_images(const ncdirect* n __attribute__ ((unused))){
 
 // Is our encoding UTF-8? Requires LANG being set to a UTF8 locale.
 bool ncdirect_canutf8(const ncdirect* n){
-  return n->tcache.utf8;
+  return n->tcache.caps.utf8;
 }
 
 int ncdirect_flush(const ncdirect* nc){
@@ -1141,11 +1258,8 @@ int ncdirect_flush(const ncdirect* nc){
   return 0;
 }
 
-int ncdirect_check_pixel_support(ncdirect* n){
-  if(query_term(&n->tcache, n->ctermfd)){
-    return -1;
-  }
-  if(n->tcache.bitmap_supported){
+int ncdirect_check_pixel_support(const ncdirect* n){
+  if(n->tcache.pixel_draw){
     return 1;
   }
   return 0;
@@ -1164,14 +1278,16 @@ int ncdirect_stream(ncdirect* n, const char* filename, ncstreamcb streamer,
   int thisid = -1;
   do{
     if(y > 0){
-      ncdirect_cursor_up(n, y);
+      if(x == ncdirect_dim_x(n)){
+        x = 0;
+        ++y;
+      }
+      ncdirect_cursor_up(n, y - 1);
     }
     if(x > 0){
       ncdirect_cursor_left(n, x);
     }
-    ncdirectv* v = ncdirect_render_visual(n, ncv, vopts->blitter, vopts->scaling,
-                                          0, 0, (vopts->flags & NCVISUAL_OPTION_ADDALPHA) ?
-                                                 vopts->transcolor | 0x1000000ul : 0);
+    ncdirectv* v = ncdirect_render_visual(n, ncv, vopts);
     if(v == NULL){
       ncvisual_destroy(ncv);
       return -1;
@@ -1194,4 +1310,61 @@ int ncdirect_stream(ncdirect* n, const char* filename, ncstreamcb streamer,
   }while(ncvisual_decode(ncv) == 0);
   ncvisual_destroy(ncv);
   return 0;
+}
+
+ncdirectf* ncdirectf_from_file(ncdirect* n __attribute__ ((unused)),
+                               const char* filename){
+  return ncvisual_from_file(filename);
+}
+
+void ncdirectf_free(ncdirectf* frame){
+  ncvisual_destroy(frame);
+}
+
+ncdirectv* ncdirectf_render(ncdirect* n, ncdirectf* frame, const struct ncvisual_options* vopts){
+  return ncdirect_render_visual(n, frame, vopts);
+}
+
+int ncdirectf_geom(ncdirect* n, ncdirectf* frame,
+                   const struct ncvisual_options* vopts, ncvgeom* geom){
+  geom->cdimy = n->tcache.cellpixy;
+  geom->cdimx = n->tcache.cellpixx;
+  geom->maxpixely = n->tcache.sixel_maxy;
+  geom->maxpixelx = n->tcache.sixel_maxx;
+  const struct blitset* bset;
+  int r = ncvisual_blitset_geom(NULL, &n->tcache, frame, vopts,
+                                &geom->pixy, &geom->pixx,
+                                &geom->scaley, &geom->scalex,
+                                &geom->rpixy, &geom->rpixx, &bset);
+  if(r == 0){
+    // FIXME ncvisual_blitset_geom() ought calculate these two for us; until
+    // then, derive them ourselves. the row count might be short by one if
+    // we're using sixel, and we're not a multiple of 6
+    geom->rcelly = geom->pixy / geom->scaley;
+    geom->rcellx = geom->pixx / geom->scalex;
+    geom->blitter = bset->geom;
+  }
+  return r;
+}
+
+unsigned ncdirect_supported_styles(const ncdirect* nc){
+  return term_supported_styles(&nc->tcache);
+}
+
+const char* ncdirect_detected_terminal(const ncdirect* nc){
+  return nc->tcache.termname;
+}
+
+const nccapabilities* ncdirect_capabilities(const ncdirect* n){
+  return &n->tcache.caps;
+}
+
+bool ncdirect_canget_cursor(const ncdirect* n){
+  if(get_escape(&n->tcache, ESCAPE_DSRCPR) == NULL){
+    return false;
+  }
+  if(n->ctermfd < 0){
+    return false;
+  }
+  return true;
 }

@@ -3,13 +3,12 @@
 use serial_test::serial;
 
 use crate::{
-    NcChannel, NcChannelPair, NCCELL_ALPHA_BLEND, NCCELL_ALPHA_HIGHCONTRAST, NCCELL_ALPHA_OPAQUE,
-    NCCELL_ALPHA_TRANSPARENT,
+    NcChannel, NcChannels, NCALPHA_BLEND, NCALPHA_HIGHCONTRAST, NCALPHA_OPAQUE, NCALPHA_TRANSPARENT,
 };
 
 // NcChannel tests -------------------------------------------------------------
 
-/// retrieves the red NcColor component
+/// retrieves the red NcComponent component
 #[test]
 #[serial]
 fn channel_r() {
@@ -17,7 +16,7 @@ fn channel_r() {
     assert_eq!(crate::ncchannel_r(c), 0x11);
 }
 
-/// retrieves the green NcColor component
+/// retrieves the green NcComponent component
 #[test]
 #[serial]
 fn channel_g() {
@@ -25,7 +24,7 @@ fn channel_g() {
     assert_eq!(crate::ncchannel_g(c), 0x22);
 }
 
-/// retrieves the blue NcColor component
+/// retrieves the blue NcComponent component
 #[test]
 #[serial]
 fn channel_b() {
@@ -33,7 +32,7 @@ fn channel_b() {
     assert_eq!(crate::ncchannel_b(c), 0x33);
 }
 
-/// writes out the three RGB NcColor components
+/// writes out the three RGB NcComponent components
 #[test]
 #[serial]
 fn channel_rgb8() {
@@ -47,7 +46,7 @@ fn channel_rgb8() {
     assert_eq!(b, 0x33);
 }
 
-/// sets the three RGB NcColor components
+/// sets the three RGB NcComponent components
 #[test]
 #[serial]
 fn channel_set_rgb8() {
@@ -89,10 +88,10 @@ fn channel_set() {
 #[serial]
 fn channel_alpha() {
     let c: NcChannel = 0x112233;
-    assert_ne!(crate::ncchannel_alpha(c), NCCELL_ALPHA_TRANSPARENT);
+    assert_ne!(crate::ncchannel_alpha(c), NCALPHA_TRANSPARENT);
 
-    let c: NcChannel = 0x112233 | NCCELL_ALPHA_TRANSPARENT;
-    assert_eq!(crate::ncchannel_alpha(c), NCCELL_ALPHA_TRANSPARENT);
+    let c: NcChannel = 0x112233 | NCALPHA_TRANSPARENT;
+    assert_eq!(crate::ncchannel_alpha(c), NCALPHA_TRANSPARENT);
 }
 
 /// sets the alpha component
@@ -100,18 +99,18 @@ fn channel_alpha() {
 #[serial]
 fn channel_set_alpha() {
     let mut c: NcChannel = 0x112233;
-    crate::ncchannel_set_alpha(&mut c, NCCELL_ALPHA_HIGHCONTRAST);
-    assert_eq!(NCCELL_ALPHA_HIGHCONTRAST, crate::ncchannel_alpha(c));
+    crate::ncchannel_set_alpha(&mut c, NCALPHA_HIGHCONTRAST);
+    assert_eq!(NCALPHA_HIGHCONTRAST, crate::ncchannel_alpha(c));
 
-    crate::ncchannel_set_alpha(&mut c, NCCELL_ALPHA_TRANSPARENT);
-    assert_eq!(NCCELL_ALPHA_TRANSPARENT, crate::ncchannel_alpha(c));
+    crate::ncchannel_set_alpha(&mut c, NCALPHA_TRANSPARENT);
+    assert_eq!(NCALPHA_TRANSPARENT, crate::ncchannel_alpha(c));
 
-    crate::ncchannel_set_alpha(&mut c, NCCELL_ALPHA_BLEND);
-    assert_eq!(NCCELL_ALPHA_BLEND, crate::ncchannel_alpha(c));
+    crate::ncchannel_set_alpha(&mut c, NCALPHA_BLEND);
+    assert_eq!(NCALPHA_BLEND, crate::ncchannel_alpha(c));
 
-    crate::ncchannel_set_alpha(&mut c, NCCELL_ALPHA_OPAQUE);
-    assert_eq!(NCCELL_ALPHA_OPAQUE, crate::ncchannel_alpha(c));
-    // TODO: CHECK for NCCELL_BGDEFAULT_MASK
+    crate::ncchannel_set_alpha(&mut c, NCALPHA_OPAQUE);
+    assert_eq!(NCALPHA_OPAQUE, crate::ncchannel_alpha(c));
+    // TODO: CHECK for NCALPHA_BGDEFAULT_MASK
 }
 
 /// sets the channel as using the default color
@@ -123,7 +122,7 @@ fn channel_set_default() {
     assert_eq!(true, crate::ncchannel_default_p(channel));
 
     // If we change it from being opaque...
-    let mut channel_transp = channel | NCCELL_ALPHA_TRANSPARENT;
+    let mut channel_transp = channel | NCALPHA_TRANSPARENT;
     assert_eq!(0x_20_112233, channel_transp); // the transparent bit is now set
 
     crate::ncchannel_set_not_default(&mut channel_transp);
@@ -162,14 +161,14 @@ fn channel_default_p() {
     let mut c: NcChannel = 0x112233;
     assert_eq!(true, crate::ncchannel_default_p(c));
 
-    let _ = crate::ncchannel_set_alpha(&mut c, NCCELL_ALPHA_OPAQUE);
+    let _ = crate::ncchannel_set_alpha(&mut c, NCALPHA_OPAQUE);
     assert_eq!(true, crate::ncchannel_default_p(c));
 
     crate::ncchannel_set(&mut c, 0x112233);
     assert_eq!(false, crate::ncchannel_default_p(c));
 }
 
-// NcChannelPair tests ---------------------------------------------------------
+// NcChannels tests ---------------------------------------------------------
 
 ///
 #[test]
@@ -177,7 +176,7 @@ fn channel_default_p() {
 #[allow(non_snake_case)]
 fn channels_set_fchannel__channels_fchannel() {
     let fc: NcChannel = 0x112233;
-    let mut cp: NcChannelPair = 0;
+    let mut cp: NcChannels = 0;
     crate::ncchannels_set_fchannel(&mut cp, fc);
     assert_eq!(crate::ncchannels_fchannel(cp), fc);
 }
@@ -188,7 +187,7 @@ fn channels_set_fchannel__channels_fchannel() {
 #[allow(non_snake_case)]
 fn channels_set_bchannel__channels_bchannel() {
     let bc: NcChannel = 0x112233;
-    let mut cp: NcChannelPair = 0;
+    let mut cp: NcChannels = 0;
     crate::ncchannels_set_bchannel(&mut cp, bc);
     assert_eq!(crate::ncchannels_bchannel(cp), bc);
 }
@@ -199,8 +198,8 @@ fn channels_set_bchannel__channels_bchannel() {
 fn channels_combine() {
     let bc: NcChannel = 0x112233;
     let fc: NcChannel = 0x445566;
-    let mut cp1: NcChannelPair = 0;
-    let mut _cp2: NcChannelPair = 0;
+    let mut cp1: NcChannels = 0;
+    let mut _cp2: NcChannels = 0;
     crate::ncchannels_set_bchannel(&mut cp1, bc);
     crate::ncchannels_set_fchannel(&mut cp1, fc);
     _cp2 = crate::ncchannels_combine(fc, bc);

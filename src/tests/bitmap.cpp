@@ -8,8 +8,7 @@ TEST_CASE("Bitmaps") {
   auto n_ = notcurses_stdplane(nc_);
   REQUIRE(n_);
 
-  if(notcurses_check_pixel_support(nc_) <= 0){
-    CHECK(0 == nc_->tcache.bitmap_supported);
+  if(!notcurses_check_pixel_support(nc_)){
     CHECK(!notcurses_stop(nc_));
     return;
   }
@@ -17,7 +16,7 @@ TEST_CASE("Bitmaps") {
   SUBCASE("SprixelTermValues") {
     CHECK(0 < nc_->tcache.cellpixy);
     CHECK(0 < nc_->tcache.cellpixx);
-    CHECK(nc_->tcache.bitmap_supported);
+    CHECK(nc_->tcache.pixel_draw);
   }
 
   SUBCASE("SprixelMinimize") {
@@ -42,6 +41,7 @@ TEST_CASE("Bitmaps") {
     auto s = n->sprite;
     REQUIRE(nullptr != s);
     ncvisual_destroy(ncv);
+    CHECK(0 == ncplane_destroy(n));
   }
 
   SUBCASE("SprixelMaximize") {
@@ -216,7 +216,7 @@ TEST_CASE("Bitmaps") {
 
 #ifdef NOTCURSES_USE_MULTIMEDIA
   SUBCASE("PixelRender") {
-    auto ncv = ncvisual_from_file(find_data("worldmap.png"));
+    auto ncv = ncvisual_from_file(find_data("worldmap.png").get());
     REQUIRE(ncv);
     struct ncvisual_options vopts{};
     vopts.blitter = NCBLIT_PIXEL;
@@ -271,7 +271,7 @@ TEST_CASE("Bitmaps") {
     ncplane_set_base(bigp, "x", 0, white);
     CHECK(vopts.n == ncvisual_render(nc_, ncv, &vopts));
     CHECK(0 == notcurses_render(nc_));
-    CHECK(0 == ncvisual_inflate(ncv, 4));
+    CHECK(0 == ncvisual_resize_noninterpolative(ncv, ncv->pixy * 4, ncv->pixx * 4));
     CHECK(4 * nc_->tcache.cellpixy == ncv->pixy);
     CHECK(4 * nc_->tcache.cellpixx == ncv->pixx);
     vopts.y = 1;
@@ -307,6 +307,57 @@ TEST_CASE("Bitmaps") {
     CHECK(0 == ncplane_destroy(n));
     ncvisual_destroy(ncv);
     CHECK(0 == notcurses_render(nc_));
+  }
+
+  // create an image of exactly 1 cell, inflate it, scale it, and compare the
+  // resulting geometries for equality
+  SUBCASE("InflateVsScale") {
+    // first, assemble a visual equivalent to 1 cell
+    auto y = nc_->tcache.cellpixy;
+    auto x = nc_->tcache.cellpixx;
+    std::vector<uint32_t> v(x * y, htole(0xff7799dd));
+    auto ncv = ncvisual_from_rgba(v.data(), y, sizeof(decltype(v)::value_type) * x, x);
+    REQUIRE(nullptr != ncv);
+    struct ncvisual_options vopts = {
+      .n = nullptr,
+      .scaling = NCSCALE_NONE,
+      .y = 0, .x = 0,
+      .begy = 0, .begx = 0,
+      .leny = 0, .lenx = 0,
+      .blitter = NCBLIT_PIXEL,
+      .flags = NCVISUAL_OPTION_NODEGRADE,
+      .transcolor = 0,
+    };
+    auto n = ncvisual_render(nc_, ncv, &vopts);
+    REQUIRE(nullptr != n);
+    struct ncplane_options nopts = {
+      .y = 2,
+      .x = 0,
+      .rows = 5,
+      .cols = 4,
+      .userptr = nullptr, .name = "scale", .resizecb = nullptr,
+      .flags = 0, .margin_b = 0, .margin_r = 0,
+    };
+    auto nres = ncplane_create(n_, &nopts);
+    REQUIRE(nullptr != nres);
+    vopts.n = nres;
+    vopts.scaling = NCSCALE_SCALE;
+    ncvisual_render(nc_, ncv, &vopts);
+    CHECK(4 == ncplane_dim_x(vopts.n));
+    CHECK(0 == ncvisual_resize_noninterpolative(ncv, ncv->pixy * 4, ncv->pixx * 4));
+    vopts.n = nullptr;
+    vopts.y = 2;
+    vopts.x = 5;
+    vopts.scaling = NCSCALE_NONE;
+    auto ninf = ncvisual_render(nc_, ncv, &vopts);
+    REQUIRE(nullptr != ninf);
+    CHECK(ncplane_dim_y(nres) == ncplane_dim_y(ninf));
+    CHECK(ncplane_dim_x(nres) == ncplane_dim_x(ninf));
+    CHECK(0 == notcurses_render(nc_));
+    ncvisual_destroy(ncv);
+    CHECK(0 == ncplane_destroy(n));
+    CHECK(0 == ncplane_destroy(ninf));
+    CHECK(0 == ncplane_destroy(nres));
   }
 
   // test NCVISUAL_OPTIONS_CHILDPLANE + stretch + (null) alignment
@@ -584,10 +635,10 @@ TEST_CASE("Bitmaps") {
 #ifdef NOTCURSES_USE_MULTIMEDIA
   SUBCASE("PixelWipeImage") {
     uint64_t channels = 0;
-    ncchannels_set_fg_alpha(&channels, CELL_ALPHA_TRANSPARENT);
-    ncchannels_set_bg_alpha(&channels, CELL_ALPHA_TRANSPARENT);
+    ncchannels_set_fg_alpha(&channels, NCALPHA_TRANSPARENT);
+    ncchannels_set_bg_alpha(&channels, NCALPHA_TRANSPARENT);
     CHECK(0 == ncplane_set_base(n_, "", 0, channels));
-    auto ncv = ncvisual_from_file(find_data("worldmap.png"));
+    auto ncv = ncvisual_from_file(find_data("worldmap.png").get());
     REQUIRE(ncv);
     struct ncvisual_options vopts{};
     vopts.blitter = NCBLIT_PIXEL;

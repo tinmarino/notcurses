@@ -1,6 +1,6 @@
 # 3.14.0 introduced NAME_WLE
 cmake_minimum_required(VERSION 3.14.0)
-project(notcurses VERSION 2.3.0
+project(notcurses VERSION 2.3.7
   DESCRIPTION "Blingful UI for modern terminal emulators"
   HOMEPAGE_URL "https://nick-black.com/dankwiki/index.php/notcurses"
   LANGUAGES C CXX)
@@ -27,9 +27,14 @@ option(USE_DOXYGEN "Build HTML cross reference with doxygen" OFF)
 option(USE_PANDOC "Build man pages and HTML reference with pandoc" ON)
 option(USE_POC "Build small, uninstalled proof-of-concept binaries" ON)
 option(USE_QRCODEGEN "Enable libqrcodegen QR code support" OFF)
+option(USE_READLINE "Enable libreadline line-editing support" ON)
 option(USE_STATIC "Build static libraries (in addition to shared)" ON)
 set(USE_MULTIMEDIA "ffmpeg" CACHE STRING "Multimedia engine, one of 'ffmpeg', 'oiio', or 'none'")
 set_property(CACHE USE_MULTIMEDIA PROPERTY STRINGS ffmpeg oiio none)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE
+    STRING "Choose the build mode." FORCE)
+endif()
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release MinSizeRel RelWithDebInfo Coverage)
 ############## END (additional) USER-SELECTABLE OPTIONS ##################
 set(USE_FFMPEG OFF)
@@ -42,10 +47,6 @@ elseif(NOT ${USE_MULTIMEDIA} STREQUAL "none")
   message(FATAL_ERROR "USE_MULTIMEDIA must be one of 'oiio', 'ffmpeg', 'none' (was '${USE_MULTIMEDIA}')")
 endif()
 
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE
-    STRING "Choose the build mode." FORCE)
-endif()
 string(APPEND CMAKE_C_FLAGS_DEBUG " -Og")
 string(APPEND CMAKE_CXX_FLAGS_DEBUG " -Og")
 if("${USE_COVERAGE}")
@@ -68,7 +69,9 @@ endif()
 
 # global compiler flags
 add_compile_definitions(FORTIFY_SOURCE=2)
-add_compile_options(-Wall -Wextra -W -Wshadow -Wformat -Wno-nonnull-compare -fexceptions)
+add_compile_options(-Wall -Wextra -W -Wshadow -Wformat -Wno-nonnull-compare
+                    -Wformat-security -fexceptions -fstrict-aliasing
+                    -Wno-string-plus-int)
 
 message(STATUS "Requested multimedia engine: ${USE_MULTIMEDIA}")
 message(STATUS "Requested build mode: ${CMAKE_BUILD_TYPE}")
@@ -84,9 +87,11 @@ pkg_search_module(TERMINFO REQUIRED tinfo>=6.1 ncursesw>=6.1)
 set_property(GLOBAL APPEND PROPERTY PACKAGES_FOUND terminfo)
 set_package_properties(terminfo PROPERTIES TYPE REQUIRED)
 set(PKGCONF_REQ_PRIV "${TERMINFO_LIBRARIES}")
+if(${USE_READLINE})
 pkg_search_module(READLINE REQUIRED readline>=8.0)
 set_property(GLOBAL APPEND PROPERTY PACKAGES_FOUND readline)
 set_package_properties(readline PROPERTIES TYPE REQUIRED)
+endif()
 if(${USE_FFMPEG})
 pkg_check_modules(AVCODEC REQUIRED libavcodec>=57.0)
 pkg_check_modules(AVFORMAT REQUIRED libavformat>=57.0)
@@ -97,7 +102,9 @@ elseif(${USE_OIIO})
 pkg_check_modules(OIIO REQUIRED OpenImageIO>=2.1)
 set_property(GLOBAL APPEND PROPERTY PACKAGES_FOUND OpenImageIO)
 endif()
-find_library(MATH_LIBRARIES m)
+if (NOT MSYS)
+  find_library(MATH_LIBRARIES m)
+endif()
 if(${USE_DOCTEST})
 find_package(doctest 2.3.5)
 set_package_properties(doctest PROPERTIES TYPE REQUIRED)
@@ -121,8 +128,11 @@ if(NOT "${HAVE_QRCODEGEN_H}")
 endif()
 set_property(GLOBAL APPEND PROPERTY PACKAGES_FOUND qrcodegen)
 endif()
-find_library(LIBM m)
-find_library(LIBRT rt)
+if (NOT MSYS)
+  find_library(LIBM m)
+  find_library(LIBRT rt)
+endif()
+
 feature_summary(WHAT ALL FATAL_ON_MISSING_REQUIRED_PACKAGES)
 
 file(GLOB COMPATSRC CONFIGURE_DEPENDS src/compat/compat.c)
@@ -151,7 +161,6 @@ target_include_directories(notcurses-core
     "${CMAKE_REQUIRED_INCLUDES}"
     "${PROJECT_BINARY_DIR}/include"
     "${TERMINFO_INCLUDE_DIRS}"
-    "${READLINE_INCLUDE_DIRS}"
 )
 target_include_directories(notcurses-core-static
   PRIVATE
@@ -160,12 +169,10 @@ target_include_directories(notcurses-core-static
     "${CMAKE_REQUIRED_INCLUDES}"
     "${PROJECT_BINARY_DIR}/include"
     "${TERMINFO_STATIC_INCLUDE_DIRS}"
-    "${READLINE_STATIC_INCLUDE_DIRS}"
 )
 target_link_libraries(notcurses-core
   PRIVATE
     "${TERMINFO_LIBRARIES}"
-    "${READLINE_LIBRARIES}"
     "${LIBM}"
     "${LIBRT}"
     "${unistring}"
@@ -175,7 +182,6 @@ target_link_libraries(notcurses-core
 target_link_libraries(notcurses-core-static
   PRIVATE
     "${TERMINFO_STATIC_LIBRARIES}"
-    "${READLINE_STATIC_LIBRARIES}"
     "${LIBM}"
     "${LIBRT}"
     "${unistring}"
@@ -185,12 +191,10 @@ target_link_libraries(notcurses-core-static
 target_link_directories(notcurses-core
   PRIVATE
     "${TERMINFO_LIBRARY_DIRS}"
-    "${READLINE_LIBRARY_DIRS}"
 )
 target_link_directories(notcurses-core-static
   PRIVATE
     "${TERMINFO_STATIC_LIBRARY_DIRS}"
-    "${READLINE_STATIC_LIBRARY_DIRS}"
 )
 # don't want these on freebsd/dragonfly/osx
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
@@ -253,6 +257,24 @@ target_link_libraries(notcurses-static
   PUBLIC
     notcurses-core-static
 )
+if(${USE_READLINE})
+target_link_libraries(notcurses-core
+  PUBLIC
+    "${READLINE_LIBRARIES}"
+)
+target_link_directories(notcurses-core
+  PUBLIC
+    "${READLINE_LIBRARY_DIRS}"
+)
+target_link_libraries(notcurses-core-static
+  PUBLIC
+    "${READLINE_LIBRARIES}"
+)
+target_link_directories(notcurses-core-static
+  PUBLIC
+    "${READLINE_LIBRARY_DIRS}"
+)
+endif()
 if(${USE_FFMPEG})
 target_include_directories(notcurses
   PRIVATE
@@ -450,10 +472,200 @@ foreach(f ${POCPPSRCS})
 endforeach()
 endif()
 
+############################################################################
+# notcurses-demo
+file(GLOB DEMOSRCS CONFIGURE_DEPENDS src/demo/*.c)
+add_executable(notcurses-demo ${DEMOSRCS} ${COMPATSRC})
+target_compile_definitions(notcurses-demo
+  PRIVATE
+    _GNU_SOURCE
+)
+target_include_directories(notcurses-demo
+  PRIVATE
+    include
+    src
+    "${CMAKE_REQUIRED_INCLUDES}"
+    "${PROJECT_BINARY_DIR}/include"
+)
+target_link_libraries(notcurses-demo
+  PRIVATE
+    notcurses
+    ${MATH_LIBRARIES}
+    Threads::Threads
+)
+
+############################################################################
+# notcurses-info
+file(GLOB INFOSRCS CONFIGURE_DEPENDS src/info/*.c)
+add_executable(notcurses-info ${INFOSRCS} ${COMPATSRC})
+target_include_directories(notcurses-info
+  PRIVATE
+    src
+    src/lib
+    include
+    "${CMAKE_REQUIRED_INCLUDES}"
+    "${PROJECT_BINARY_DIR}/include"
+)
+target_link_libraries(notcurses-info
+  PRIVATE
+    notcurses
+)
+
+############################################################################
+# notcurses-input
+file(GLOB INPUTSRCS CONFIGURE_DEPENDS src/input/input.cpp)
+add_executable(notcurses-input ${INPUTSRCS})
+target_include_directories(notcurses-input
+  PRIVATE
+    include
+    "${CMAKE_REQUIRED_INCLUDES}"
+    "${PROJECT_BINARY_DIR}/include"
+)
+target_link_libraries(notcurses-input
+  PRIVATE
+    notcurses++
+)
+
+############################################################################
+# nctetris
+file(GLOB TETRISSRC CONFIGURE_DEPENDS src/tetris/*.cpp)
+add_executable(nctetris ${TETRISSRC})
+target_include_directories(nctetris
+  PRIVATE
+    include
+    "${CMAKE_REQUIRED_INCLUDES}"
+    "${PROJECT_BINARY_DIR}/include"
+)
+target_link_libraries(nctetris
+  PRIVATE
+    notcurses++
+)
+
+############################################################################
+# ncneofetch
+file(GLOB FETCHSRCS CONFIGURE_DEPENDS src/fetch/*.c)
+add_executable(ncneofetch ${FETCHSRCS})
+target_include_directories(ncneofetch
+  PRIVATE
+    include
+    "${CMAKE_REQUIRED_INCLUDES}"
+    "${PROJECT_BINARY_DIR}/include"
+)
+target_link_libraries(ncneofetch
+  PRIVATE
+    notcurses
+)
+
+# documentation source, processed by pandoc into XHTML and man pages. declare
+# them here so that we can filter out man pages for binaries which aren't
+# going to be installed.
+file(GLOB MANSOURCE1 CONFIGURE_DEPENDS doc/man/man1/*.md)
+file(GLOB MANSOURCE3 CONFIGURE_DEPENDS doc/man/man3/*.md)
+
+# all further binaries require multimedia support
+if(${USE_MULTIMEDIA} STREQUAL "none")
+  list(FILTER MANSOURCE1 EXCLUDE REGEX "ncls.1.md")
+  list(FILTER MANSOURCE1 EXCLUDE REGEX "ncplayer.1.md")
+else()
+############################################################################
+# ncls
+file(GLOB LSSRC CONFIGURE_DEPENDS src/ls/*.cpp)
+add_executable(ncls ${LSSRC})
+target_include_directories(ncls
+  PRIVATE
+    include
+    "${CMAKE_REQUIRED_INCLUDES}"
+    "${PROJECT_BINARY_DIR}/include"
+)
+tarGET_Link_libraries(ncls
+  PRIVATE
+    notcurses++
+)
+
+############################################################################
+# ncplayer
+file(GLOB PLAYERSRCS CONFIGURE_DEPENDS src/player/*.cpp)
+add_executable(ncplayer ${PLAYERSRCS} ${COMPATSRC})
+target_include_directories(ncplayer
+  PRIVATE
+    include
+    src
+    "${CMAKE_REQUIRED_INCLUDES}"
+    "${PROJECT_BINARY_DIR}/include"
+)
+target_link_libraries(ncplayer
+  PRIVATE
+    notcurses++
+)
+endif()
+
+############################################################################
+# testing
+if(${BUILD_TESTING})
+#set(CMAKE_CTEST_ARGUMENTS "-V")
+if(${USE_DOCTEST})
+file(GLOB TESTSRCS CONFIGURE_DEPENDS src/tests/*.cpp)
+add_executable(notcurses-tester ${TESTSRCS})
+target_include_directories(notcurses-tester
+  PRIVATE
+    include
+    src
+    "${CMAKE_REQUIRED_INCLUDES}"
+    "${PROJECT_BINARY_DIR}/include"
+    src/lib
+)
+target_link_libraries(notcurses-tester
+  PRIVATE
+    notcurses++
+    "${unistring}"
+    "${TERMINFO_LIBRARIES}"
+)
+add_test(
+  NAME notcurses-tester
+  COMMAND notcurses-tester -p ${CMAKE_CURRENT_SOURCE_DIR}/data --abort-after=1
+)
+set_tests_properties(notcurses-tester PROPERTIES RUN_SERIAL TRUE)
+install(TARGETS notcurses-tester DESTINATION bin)
+else()
+  list(FILTER MANSOURCE1 EXCLUDE REGEX "notcurses-tester.1.md")
+endif()
+enable_testing()
+# the accursed Ubuntu buildd sets "TERM=unknown" for unfathomable reasons
+if(DEFINED ENV{TERM} AND NOT $ENV{TERM} STREQUAL "unknown" AND USE_POC)
+add_test(
+  NAME notcurses-info
+  COMMAND notcurses-info
+)
+add_test(
+  NAME ncpp_build
+  COMMAND ncpp_build
+)
+add_test(
+  NAME ncpp_build_exceptions
+  COMMAND ncpp_build_exceptions
+)
+add_test(
+  NAME sgr-full
+  COMMAND sgr-full
+)
+add_test(
+  NAME rgb
+  COMMAND rgb
+)
+add_test(
+  NAME rgbbg
+  COMMAND rgbbg
+)
+set_tests_properties(ncpp_build ncpp_build_exceptions rgb rgbbg
+  PROPERTIES RUN_SERIAL TRUE
+)
+endif()
+else()
+  list(FILTER MANSOURCE1 EXCLUDE REGEX "notcurses-tester.1.md")
+endif()
+
 # Pandoc documentation (man pages, HTML reference)
 if(USE_PANDOC)
-  file(GLOB MANSOURCE1 CONFIGURE_DEPENDS doc/man/man1/*.md)
-  file(GLOB MANSOURCE3 CONFIGURE_DEPENDS doc/man/man3/*.md)
   find_program(PANDOC pandoc)
   if(NOT PANDOC)
     message(FATAL_ERROR "pandoc not found. USE_PANDOC=OFF to disable.")
@@ -527,164 +739,6 @@ if(USE_DOXYGEN)
   endif()
 endif()
 
-############################################################################
-# notcurses-demo
-file(GLOB DEMOSRCS CONFIGURE_DEPENDS src/demo/*.c)
-add_executable(notcurses-demo ${DEMOSRCS} ${COMPATSRC})
-target_compile_definitions(notcurses-demo
-  PRIVATE
-    _GNU_SOURCE
-)
-target_include_directories(notcurses-demo
-  PRIVATE
-    include
-    src
-    "${CMAKE_REQUIRED_INCLUDES}"
-    "${PROJECT_BINARY_DIR}/include"
-)
-target_link_libraries(notcurses-demo
-  PRIVATE
-    notcurses
-    ${MATH_LIBRARIES}
-    Threads::Threads
-)
-
-############################################################################
-# notcurses-input
-file(GLOB INPUTSRCS CONFIGURE_DEPENDS src/input/input.cpp)
-add_executable(notcurses-input ${INPUTSRCS})
-target_include_directories(notcurses-input
-  PRIVATE
-    include
-    "${CMAKE_REQUIRED_INCLUDES}"
-    "${PROJECT_BINARY_DIR}/include"
-)
-target_link_libraries(notcurses-input
-  PRIVATE
-    notcurses++
-)
-
-############################################################################
-# nctetris
-file(GLOB TETRISSRC CONFIGURE_DEPENDS src/tetris/*.cpp)
-add_executable(nctetris ${TETRISSRC})
-target_include_directories(nctetris
-  PRIVATE
-    include
-    "${CMAKE_REQUIRED_INCLUDES}"
-    "${PROJECT_BINARY_DIR}/include"
-)
-target_link_libraries(nctetris
-  PRIVATE
-    notcurses++
-)
-
-############################################################################
-# ncneofetch
-file(GLOB FETCHSRCS CONFIGURE_DEPENDS src/fetch/*.c)
-add_executable(ncneofetch ${FETCHSRCS})
-target_include_directories(ncneofetch
-  PRIVATE
-    include
-    "${CMAKE_REQUIRED_INCLUDES}"
-    "${PROJECT_BINARY_DIR}/include"
-)
-target_link_libraries(ncneofetch
-  PRIVATE
-    notcurses
-)
-
-# all further binaries require multimedia support
-if(NOT ${USE_MULTIMEDIA} STREQUAL "none")
-############################################################################
-# ncls
-file(GLOB LSSRC CONFIGURE_DEPENDS src/ls/*.cpp)
-add_executable(ncls ${LSSRC})
-target_include_directories(ncls
-  PRIVATE
-    include
-    "${CMAKE_REQUIRED_INCLUDES}"
-    "${PROJECT_BINARY_DIR}/include"
-)
-tarGET_Link_libraries(ncls
-  PRIVATE
-    notcurses++
-)
-
-############################################################################
-# ncplayer
-file(GLOB PLAYERSRCS CONFIGURE_DEPENDS src/player/*.cpp)
-add_executable(ncplayer ${PLAYERSRCS} ${COMPATSRC})
-target_include_directories(ncplayer
-  PRIVATE
-    include
-    src
-    "${CMAKE_REQUIRED_INCLUDES}"
-    "${PROJECT_BINARY_DIR}/include"
-)
-target_link_libraries(ncplayer
-  PRIVATE
-    notcurses++
-)
-endif()
-
-############################################################################
-# testing
-if(${BUILD_TESTING})
-#set(CMAKE_CTEST_ARGUMENTS "-V")
-if(${USE_DOCTEST})
-file(GLOB TESTSRCS CONFIGURE_DEPENDS src/tests/*.cpp)
-add_executable(notcurses-tester ${TESTSRCS})
-target_include_directories(notcurses-tester
-  PRIVATE
-    include
-    src
-    "${CMAKE_REQUIRED_INCLUDES}"
-    "${PROJECT_BINARY_DIR}/include"
-    src/lib
-)
-target_link_libraries(notcurses-tester
-  PRIVATE
-    notcurses++
-    "${unistring}"
-    "${TERMINFO_LIBRARIES}"
-)
-add_test(
-  NAME notcurses-tester
-  COMMAND notcurses-tester -p ${CMAKE_CURRENT_SOURCE_DIR}/data
-)
-set_tests_properties(notcurses-tester PROPERTIES RUN_SERIAL TRUE)
-install(TARGETS notcurses-tester DESTINATION bin)
-endif()
-enable_testing()
-# the accursed Ubuntu buildd sets "TERM=unknown" for unfathomable reasons
-if(DEFINED ENV{TERM} AND NOT $ENV{TERM} STREQUAL "unknown" AND USE_POC)
-add_test(
-  NAME ncpp_build
-  COMMAND ncpp_build
-)
-add_test(
-  NAME ncpp_build_exceptions
-  COMMAND ncpp_build_exceptions
-)
-add_test(
-  NAME sgr-full
-  COMMAND sgr-full
-)
-add_test(
-  NAME rgb
-  COMMAND rgb
-)
-add_test(
-  NAME rgbbg
-  COMMAND rgbbg
-)
-set_tests_properties(ncpp_build ncpp_build_exceptions rgb rgbbg
-  PROPERTIES RUN_SERIAL TRUE
-)
-endif()
-endif()
-
 add_custom_target(demo
   COMMAND ./notcurses-demo -p ${CMAKE_CURRENT_SOURCE_DIR}/data -c
   DEPENDS notcurses-demo
@@ -710,7 +764,7 @@ configure_file(tools/builddef.h.in include/builddef.h)
 
 configure_package_config_file(tools/NotcursesConfig.cmake.in
   ${CMAKE_CURRENT_BINARY_DIR}/NotcursesConfig.cmake
-  INSTALL_DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/notcurses/cmake
+  INSTALL_DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/cmake/Notcurses
 )
 
 write_basic_package_version_file(
@@ -720,7 +774,7 @@ write_basic_package_version_file(
 
 configure_package_config_file(tools/NotcursesCoreConfig.cmake.in
   ${CMAKE_CURRENT_BINARY_DIR}/NotcursesCoreConfig.cmake
-  INSTALL_DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/notcurses/cmake
+  INSTALL_DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/cmake/NotcursesCore
 )
 
 write_basic_package_version_file(
@@ -730,13 +784,13 @@ write_basic_package_version_file(
 
 configure_package_config_file(tools/Notcurses++Config.cmake.in
   ${CMAKE_CURRENT_BINARY_DIR}/Notcurses++Config.cmake
-  INSTALL_DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/notcurses/cmake
-  )
+  INSTALL_DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/cmake/Notcurses++
+)
 
 write_basic_package_version_file(
   ${CMAKE_CURRENT_BINARY_DIR}/Notcurses++ConfigVersion.cmake
   COMPATIBILITY SameMajorVersion
-  )
+)
 
 # Installation
 install(FILES
@@ -755,7 +809,7 @@ install(FILES
   "${CMAKE_CURRENT_BINARY_DIR}/Notcurses++Config.cmake"
   "${CMAKE_CURRENT_BINARY_DIR}/Notcurses++ConfigVersion.cmake"
   DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Notcurses++"
-  )
+)
 
 install(FILES
   ${CMAKE_CURRENT_BINARY_DIR}/notcurses-core.pc
@@ -770,7 +824,7 @@ install(FILES
 install(FILES
   ${CMAKE_CURRENT_BINARY_DIR}/notcurses++.pc
   DESTINATION ${PKGCONFIG_DIR}
-  )
+)
 
 if(NOT ${USE_MULTIMEDIA} STREQUAL "none")
 file(GLOB TESTDATA CONFIGURE_DEPENDS data/*)
@@ -787,6 +841,7 @@ list(FILTER MARKDOWN EXCLUDE REGEX "INSTALL.md")
 install(FILES ${MARKDOWN} DESTINATION ${CMAKE_INSTALL_DOCDIR})
 
 install(TARGETS notcurses-demo DESTINATION bin)
+install(TARGETS notcurses-info DESTINATION bin)
 install(TARGETS notcurses-input DESTINATION bin)
 install(TARGETS nctetris DESTINATION bin)
 install(TARGETS ncneofetch DESTINATION bin)

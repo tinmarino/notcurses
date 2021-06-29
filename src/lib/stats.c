@@ -143,6 +143,8 @@ void notcurses_stats_reset(notcurses* nc, ncstats* stats){
   stash->refreshes += nc->stats.refreshes;
   stash->sprixelemissions += nc->stats.sprixelemissions;
   stash->sprixelelisions += nc->stats.sprixelelisions;
+  stash->sprixelbytes += nc->stats.sprixelbytes;
+  stash->appsync_updates += nc->stats.appsync_updates;
 
   stash->fbbytes = nc->stats.fbbytes;
   stash->planes = nc->stats.planes;
@@ -167,12 +169,15 @@ void summarize_stats(notcurses* nc){
     qprefix(stats->raster_ns, NANOSECS_IN_SEC, totalbuf, 0);
     qprefix(stats->raster_min_ns, NANOSECS_IN_SEC, minbuf, 0);
     qprefix(stats->raster_max_ns, NANOSECS_IN_SEC, maxbuf, 0);
-    qprefix(stats->writeouts ? stats->raster_ns / stats->writeouts : 0, NANOSECS_IN_SEC, avgbuf, 0);
+    qprefix((stats->writeouts || stats->failed_writeouts) ?
+            stats->raster_ns / (stats->writeouts + stats->failed_writeouts)
+            : 0, NANOSECS_IN_SEC, avgbuf, 0);
     fprintf(stderr, "%ju raster%s, %ss (%ss min, %ss avg, %ss max)\n",
             stats->writeouts, stats->writeouts == 1 ? "" : "s",
             totalbuf, minbuf, avgbuf, maxbuf);
     qprefix(stats->writeout_ns, NANOSECS_IN_SEC, totalbuf, 0);
-    qprefix(stats->writeout_min_ns, NANOSECS_IN_SEC, minbuf, 0);
+    qprefix(stats->writeout_ns ? stats->writeout_min_ns : 0,
+            NANOSECS_IN_SEC, minbuf, 0);
     qprefix(stats->writeout_max_ns, NANOSECS_IN_SEC, maxbuf, 0);
     qprefix(stats->writeouts ? stats->writeout_ns / stats->writeouts : 0,
             NANOSECS_IN_SEC, avgbuf, 0);
@@ -180,7 +185,8 @@ void summarize_stats(notcurses* nc){
             stats->writeouts, stats->writeouts == 1 ? "" : "s",
             totalbuf, minbuf, avgbuf, maxbuf);
     bprefix(stats->render_bytes, 1, totalbuf, 1),
-    bprefix(stats->render_min_bytes, 1, minbuf, 1),
+    bprefix(stats->render_bytes ? stats->render_min_bytes : 0,
+            1, minbuf, 1),
     bprefix(stats->renders ? stats->render_bytes / stats->renders : 0, 1, avgbuf, 1);
     bprefix(stats->render_max_bytes, 1, maxbuf, 1),
     fprintf(stderr, "%sB (%sB min, %sB avg, %sB max)\n",
@@ -201,7 +207,7 @@ void summarize_stats(notcurses* nc){
             stats->fgelisions,
             stats->bgemissions,
             stats->bgelisions);
-    fprintf(stderr, "Cell emits:elides: %ju/%ju (%.2f%%) %.2f%% %.2f%% %.2f%%\n",
+    fprintf(stderr, "Cell emits:elides: %ju:%ju (%.2f%%) %.2f%% %.2f%% %.2f%%\n",
             stats->cellemissions, stats->cellelisions,
             (stats->cellemissions + stats->cellelisions) == 0 ? 0 :
             (stats->cellelisions * 100.0) / (stats->cellemissions + stats->cellelisions),
@@ -211,9 +217,13 @@ void summarize_stats(notcurses* nc){
             (stats->fgelisions * 100.0) / (stats->fgemissions + stats->fgelisions),
             (stats->bgemissions + stats->bgelisions) == 0 ? 0 :
             (stats->bgelisions * 100.0) / (stats->bgemissions + stats->bgelisions));
-    fprintf(stderr, "Sprixel emits:elides: %ju/%ju (%.2f%%)\n",
+    char totalbuf[BPREFIXSTRLEN + 1];
+    qprefix(stats->sprixelbytes, 1, totalbuf, 1);
+    fprintf(stderr, "Sprixel emits:elides: %ju:%ju (%.2f%%) %sB ASUs: %ju (%.2f%%)\n",
             stats->sprixelemissions, stats->sprixelelisions,
             (stats->sprixelemissions + stats->sprixelelisions) == 0 ? 0 :
-            (stats->sprixelelisions * 100.0) / (stats->sprixelemissions + stats->sprixelelisions));
+            (stats->sprixelelisions * 100.0) / (stats->sprixelemissions + stats->sprixelelisions),
+            totalbuf, stats->appsync_updates,
+            stats->writeouts ? stats->appsync_updates * 100.0 / stats->writeouts : 0);
   }
 }

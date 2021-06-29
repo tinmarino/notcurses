@@ -32,8 +32,8 @@ typedef struct fetched_info {
   char* kernel;                // strdup(uname(2)->name)
   char* kernver;               // strdup(uname(2)->version);
   char* desktop;               // getenv("XDG_CURRENT_DESKTOP")
-  char* shell;                 // getenv("SHELL")
-  char* term;                  // getenv("TERM")
+  const char* shell;           // getenv("SHELL")
+  const char* term;            // ncdirect_detected_terminal()
   char* lang;                  // getenv("LANG")
   int dimy, dimx;              // extracted from xrandr
   char* cpu_model;             // FIXME don't handle hetero setups yet
@@ -49,10 +49,10 @@ free_fetched_info(fetched_info* fi){
 }
 
 static int
-fetch_env_vars(fetched_info* fi){
+fetch_env_vars(struct ncdirect* nc, fetched_info* fi){
   fi->desktop = getenv("XDG_CURRENT_DESKTOP");
   fi->shell = getenv("SHELL");
-  fi->term = getenv("TERM");
+  fi->term = ncdirect_detected_terminal(nc);
   fi->lang = getenv("LANG");
   return 0;
 }
@@ -156,12 +156,12 @@ pipe_getline(const char* cmdline){
   char* buf = malloc(BUFSIZ); // gatesv("BUFSIZ bytes is enough for anyone")
   if(fgets(buf, BUFSIZ, p) == NULL){
 //fprintf(stderr, "Error reading from %s (%s)\n", cmdline, strerror(errno));
-    fclose(p);
+    pclose(p);
     free(buf);
     return NULL;
   }
   // FIXME read any remaining junk so as to stave off SIGPIPEs?
-  if(fclose(p)){
+  if(pclose(p)){
     fprintf(stderr, "Error closing pipe (%s)\n", strerror(errno));
     free(buf);
     return NULL;
@@ -563,11 +563,13 @@ neologo_present(struct ncdirect* nc, const char* nlogo){
   }
   free(lines);
   ncdirect_set_fg_rgb(nc, 0xba55d3);
+  ncdirect_on_styles(nc, NCSTYLE_BOLD | NCSTYLE_ITALIC);
   if(ncdirect_canopen_images(nc)){
     ncdirect_printf_aligned(nc, -1, NCALIGN_CENTER, "(no image file is known for your distro)");
   }else{
     ncdirect_printf_aligned(nc, -1, NCALIGN_CENTER, "(notcurses was compiled without image support)");
   }
+  ncdirect_off_styles(nc, NCSTYLE_BOLD | NCSTYLE_ITALIC);
   return 0;
 }
 
@@ -576,7 +578,6 @@ display_thread(void* vmarshal){
   struct marshal* m = vmarshal;
   drawpalette(m->nc);
   if(ncdirect_canopen_images(m->nc)){
-    ncdirect_check_pixel_support(m->nc);
     if(m->logo){
       if(ncdirect_render_image(m->nc, m->logo, NCALIGN_CENTER,
                                NCBLIT_PIXEL, NCSCALE_SCALE_HIRES) == 0){
@@ -626,7 +627,7 @@ ncneofetch(struct ncdirect* nc){
   const bool launched = !pthread_create(&tid, NULL, display_thread, &display_marshal);
   unix_gethostname(&fi);
   unix_getusername(&fi);
-  fetch_env_vars(&fi);
+  fetch_env_vars(nc, &fi);
   fetch_x_props(&fi);
   if(kern == NCNEO_LINUX){
     fetch_cpu_info(&fi);

@@ -1,15 +1,15 @@
-//! `Notcurses`
+//! `Nc`
 
-// total: 51
+// total: 53
 // ---------------------------------------------------
 // (X)  1 : wont do
+// (…)  4 : TODO / WIP
 //
-// (f) 44 : unsafe ffi function exported by bindgen
+// (f) 45 : unsafe ffi function exported by bindgen
 // (w)  0 : safely wrapped ffi function
 // (r)  6 : static function manually reimplemented
 //
 // (m) 38 : method implemented
-// (~)  3 : work in progress
 //
 // (t) 13 : unit test done for the function
 // (T)  0 : unit test done also for the method
@@ -28,8 +28,9 @@
 //~f   notcurses_core_init
 // fm  notcurses_cursor_disable
 // fm  notcurses_cursor_enable
+// f   notcurses_cursor_yx
 // fmt notcurses_debug
-// fm  notcurses_debug_caps
+//~f   notcurses_detected_terminal
 // fmt notcurses_drop_planes
 // fm  notcurses_getc
 // fmt notcurses_init
@@ -77,12 +78,20 @@ mod reimplemented;
 pub(crate) use helpers::*;
 pub use reimplemented::*;
 
-/// Notcurses builds atop the terminfo abstraction layer to
-/// provide reasonably portable vivid character displays.
-pub type Notcurses = crate::bindings::ffi::notcurses;
+/// The full **notcurses** context.
+///
+/// It's built atop the terminfo abstraction layer to provide reasonably
+/// portable vivid character displays.
+pub type Nc = crate::bindings::ffi::notcurses;
+
+#[deprecated]
+pub type Notcurses = Nc;
 
 /// Options struct for [`Notcurses`]
-pub type NotcursesOptions = crate::bindings::ffi::notcurses_options;
+pub type NcOptions = crate::bindings::ffi::notcurses_options;
+
+#[deprecated]
+pub type NotcursesOptions = NcOptions;
 
 /// Do not call setlocale()
 ///
@@ -98,7 +107,7 @@ pub const NCOPTION_INHIBIT_SETLOCALE: u64 = crate::bindings::ffi::NCOPTION_INHIB
 
 /// Do not enter alternate mode.
 ///
-/// If smcup/rmcup capabilities are indicated, Notcurses defaults to making use
+/// If smcup/rmcup capabilities are indicated, notcurses defaults to making use
 /// of the "alternate screen". This flag inhibits use of smcup/rmcup.
 pub const NCOPTION_NO_ALTERNATE_SCREEN: u64 =
     crate::bindings::ffi::NCOPTION_NO_ALTERNATE_SCREEN as u64;
@@ -114,10 +123,10 @@ pub const NCOPTION_NO_CLEAR_BITMAPS: u64 = crate::bindings::ffi::NCOPTION_NO_CLE
 /// Notcurses might attempt to change the font slightly, to support certain
 /// glyphs (especially on the Linux console). If this is set, no such
 /// modifications will be made. Note that font changes will not affect anything
-/// but the virtual console/terminal in which Notcurses is running.
+/// but the virtual console/terminal in which notcurses is running.
 pub const NCOPTION_NO_FONT_CHANGES: u64 = crate::bindings::ffi::NCOPTION_NO_FONT_CHANGES as u64;
 
-/// Do not handle SIG{ING, SEGV, ABRT, QUIT}
+/// Do not handle SIG{ING, SEGV, ABRT, QUIT}.
 ///
 /// A signal handler will usually be installed for SIGINT, SIGQUIT, SIGSEGV,
 /// SIGTERM, and SIGABRT, cleaning up the terminal on such exceptions.
@@ -125,7 +134,7 @@ pub const NCOPTION_NO_FONT_CHANGES: u64 = crate::bindings::ffi::NCOPTION_NO_FONT
 pub const NCOPTION_NO_QUIT_SIGHANDLERS: u64 =
     crate::bindings::ffi::NCOPTION_NO_QUIT_SIGHANDLERS as u64;
 
-/// Do not handle SIGWINCH
+/// Do not handle SIGWINCH.
 ///
 /// A signal handler will usually be installed for SIGWINCH, resulting in
 /// NCKEY_RESIZE events being generated on input.
@@ -133,7 +142,14 @@ pub const NCOPTION_NO_QUIT_SIGHANDLERS: u64 =
 pub const NCOPTION_NO_WINCH_SIGHANDLER: u64 =
     crate::bindings::ffi::NCOPTION_NO_WINCH_SIGHANDLER as u64;
 
-/// Do not print banners
+/// Initialize the standard plane's virtual cursor to match the physical cursor
+/// at context creation time.
+///
+/// Together with [`NCOPTION_NO_ALTERNATE_SCREEN`] and a scrolling standard plane,
+/// this facilitates easy scrolling-style programs in rendered mode.
+pub const NCOPTION_PRESERVE_CURSOR: u64 = crate::bindings::ffi::NCOPTION_PRESERVE_CURSOR as u64;
+
+/// Do not print banners.
 ///
 /// Notcurses typically prints version info in notcurses_init() and performance
 /// info in notcurses_stop(). This inhibits that output.
@@ -141,11 +157,11 @@ pub const NCOPTION_SUPPRESS_BANNERS: u64 = crate::bindings::ffi::NCOPTION_SUPPRE
 
 // NcLogLevel ------------------------------------------------------------------
 
-/// Log level for [`NotcursesOptions`]
+/// Log level for [`NcOptions`]
 ///
-/// These log levels consciously map cleanly to those of libav; Notcurses itself
+/// These log levels consciously map cleanly to those of libav; notcurses itself
 /// does not use this full granularity. The log level does not affect the opening
-/// and closing banners, which can be disabled via the `NotcursesOptions`
+/// and closing banners, which can be disabled via the `NcOptions`
 /// `NCOPTION_SUPPRESS_BANNERS`.
 /// Note that if stderr is connected to the same terminal on which we're
 /// rendering, any kind of logging will disrupt the output.

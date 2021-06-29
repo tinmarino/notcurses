@@ -25,16 +25,16 @@ encoding_x_scale(const tinfo* tcache, const struct blitset* bset) {
 // use NCBLIT_PIXEL for NCBLIT_DEFAULT, though maybe this ought change.
 static inline ncblitter_e 
 rgba_blitter_default(const tinfo* tcache, ncscale_e scale){
-  if(!tcache->utf8){
+  if(!tcache->caps.utf8){
     return NCBLIT_1x1; // only one that works in ASCII
   }
   if(scale == NCSCALE_NONE || scale == NCSCALE_SCALE){
     return NCBLIT_2x1;
   }
-  if(tcache->sextants){
+  if(tcache->caps.sextants){
     return NCBLIT_3x2;
   }
-  if(tcache->quadrants){
+  if(tcache->caps.quadrants){
     return NCBLIT_2x2;
   }
   return NCBLIT_2x1;

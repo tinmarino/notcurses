@@ -6,42 +6,67 @@ static const unsigned char zeroes[] = "\x00\x00\x00\x00";
 
 // linearly interpolate a 24-bit RGB value along each 8-bit channel
 static inline uint32_t
-lerp(uint32_t c0, uint32_t c1){
-  uint32_t ret = 0;
+lerp(uint32_t c0, uint32_t c1, unsigned nointerpolate){
   unsigned r0, g0, b0, r1, g1, b1;
+  uint32_t ret = 0;
   ncchannel_rgb8(c0, &r0, &g0, &b0);
-  ncchannel_rgb8(c1, &r1, &g1, &b1);
-  ncchannel_set_rgb8(&ret, (r0 + r1 + 1) / 2,
-                         (g0 + g1 + 1) / 2,
-                         (b0 + b1 + 1) / 2);
+  if(!nointerpolate){
+    ncchannel_rgb8(c1, &r1, &g1, &b1);
+    ncchannel_set_rgb8(&ret, (r0 + r1 + 1) / 2,
+                          (g0 + g1 + 1) / 2,
+                          (b0 + b1 + 1) / 2);
+  }else{
+    ncchannel_set_rgb8(&ret, r0, g0, b0);
+  }
   return ret;
 }
 
 // linearly interpolate a 24-bit RGB value along each 8-bit channel
 static inline uint32_t
-trilerp(uint32_t c0, uint32_t c1, uint32_t c2){
+trilerp(uint32_t c0, uint32_t c1, uint32_t c2, unsigned nointerpolate){
   uint32_t ret = 0;
   unsigned r0, g0, b0, r1, g1, b1, r2, g2, b2;
   ncchannel_rgb8(c0, &r0, &g0, &b0);
-  ncchannel_rgb8(c1, &r1, &g1, &b1);
-  ncchannel_rgb8(c2, &r2, &g2, &b2);
-  ncchannel_set_rgb8(&ret, (r0 + r1 + r2 + 2) / 3,
-                         (g0 + g1 + g2 + 2) / 3,
-                         (b0 + b1 + b2 + 2) / 3);
+  if(!nointerpolate){
+    ncchannel_rgb8(c1, &r1, &g1, &b1);
+    ncchannel_rgb8(c2, &r2, &g2, &b2);
+    ncchannel_set_rgb8(&ret, (r0 + r1 + r2 + 2) / 3,
+                          (g0 + g1 + g2 + 2) / 3,
+                          (b0 + b1 + b2 + 2) / 3);
+  }else{
+    ncchannel_set_rgb8(&ret, r0, g0, b0);
+  }
   return ret;
+}
+
+// take a sum over channels, and the sample count, write back lerped channel
+static inline uint32_t
+generalerp(unsigned rsum, unsigned gsum, unsigned bsum, int count){
+  if(count == 0){
+    assert(0 == rsum);
+    assert(0 == gsum);
+    assert(0 == bsum);
+    return 0;
+  }
+  return CHANNEL_RGB_INITIALIZER((rsum + (count - 1)) / count,
+                                 (gsum + (count - 1)) / count,
+                                 (bsum + (count - 1)) / count);
 }
 
 static inline unsigned
 rgba_trans_q(const unsigned char* p, uint32_t transcolor){
-  return rgba_trans_p(*(const uint32_t*)p, transcolor);
+  uint32_t q;
+  memcpy(&q, p, sizeof(q));
+  return rgba_trans_p(q, transcolor);
 }
 
 // Retarded RGBA blitter (ASCII only).
 static inline int
 tria_blit_ascii(ncplane* nc, int linesize, const void* data,
-                int leny, int lenx, const blitterargs* bargs){
+                int leny, int lenx, const blitterargs* bargs,
+                int bpp){
 //fprintf(stderr, "ASCII %d X %d @ %d X %d (%p) place: %d X %d\n", leny, lenx, bargs->begy, bargs->begx, data, bargs->u.cell.placey, bargs->u.cell.placex);
-  const int bpp = 32;
+  const bool blendcolors = bargs->flags & NCVISUAL_OPTION_BLEND;
   int dimy, dimx, x, y;
   int total = 0; // number of cells written
   ncplane_dim_yx(nc, &dimy, &dimx);
@@ -67,13 +92,13 @@ tria_blit_ascii(ncplane* nc, int linesize, const void* data,
       // effective in that case anyway
       c->channels = 0;
       c->stylemask = 0;
-      if(bargs->u.cell.blendcolors){
-        nccell_set_bg_alpha(c, CELL_ALPHA_BLEND);
-        nccell_set_fg_alpha(c, CELL_ALPHA_BLEND);
+      if(blendcolors){
+        nccell_set_bg_alpha(c, NCALPHA_BLEND);
+        nccell_set_fg_alpha(c, NCALPHA_BLEND);
       }
       if(rgba_trans_q(rgbbase_up, bargs->transcolor)){
-        nccell_set_bg_alpha(c, CELL_ALPHA_TRANSPARENT);
-        nccell_set_fg_alpha(c, CELL_ALPHA_TRANSPARENT);
+        nccell_set_bg_alpha(c, NCALPHA_TRANSPARENT);
+        nccell_set_fg_alpha(c, NCALPHA_TRANSPARENT);
         cell_set_blitquadrants(c, 0, 0, 0, 0);
       }else{
         nccell_set_fg_rgb8(c, rgbbase_up[0], rgbbase_up[1], rgbbase_up[2]);
@@ -92,11 +117,11 @@ tria_blit_ascii(ncplane* nc, int linesize, const void* data,
 // RGBA half-block blitter. Best for most images/videos. Full fidelity
 // combined with 1:1 pixel aspect ratio.
 static inline int
-tria_blit(ncplane* nc, int linesize, const void* data,
-          int leny, int lenx, const blitterargs* bargs){
+tria_blit(ncplane* nc, int linesize, const void* data, int leny, int lenx,
+          const blitterargs* bargs, int bpp){
+  const bool blendcolors = bargs->flags & NCVISUAL_OPTION_BLEND;
 //fprintf(stderr, "HALF %d X %d @ %d X %d (%p) place: %d X %d\n", leny, lenx, bargs->begy, bargs->begx, data, bargs->u.cell.placey, bargs->u.cell.placex);
   uint32_t transcolor = bargs->transcolor;
-  const int bpp = 32;
   int dimy, dimx, x, y;
   int total = 0; // number of cells written
   ncplane_dim_yx(nc, &dimy, &dimx);
@@ -126,14 +151,14 @@ tria_blit(ncplane* nc, int linesize, const void* data,
       // effective in that case anyway
       c->channels = 0;
       c->stylemask = 0;
-      if(bargs->u.cell.blendcolors){
-        nccell_set_bg_alpha(c, CELL_ALPHA_BLEND);
-        nccell_set_fg_alpha(c, CELL_ALPHA_BLEND);
+      if(blendcolors){
+        nccell_set_bg_alpha(c, NCALPHA_BLEND);
+        nccell_set_fg_alpha(c, NCALPHA_BLEND);
       }
       if(rgba_trans_q(rgbbase_up, transcolor) || rgba_trans_q(rgbbase_down, transcolor)){
-        nccell_set_bg_alpha(c, CELL_ALPHA_TRANSPARENT);
+        nccell_set_bg_alpha(c, NCALPHA_TRANSPARENT);
         if(rgba_trans_q(rgbbase_up, transcolor) && rgba_trans_q(rgbbase_down, transcolor)){
-          nccell_set_fg_alpha(c, CELL_ALPHA_TRANSPARENT);
+          nccell_set_fg_alpha(c, NCALPHA_TRANSPARENT);
         }else if(rgba_trans_q(rgbbase_up, transcolor)){ // down has the color
           if(pool_blit_direct(&nc->pool, c, "\u2584", strlen("\u2584"), 1) <= 0){
             return -1;
@@ -216,7 +241,7 @@ rgb_4diff(uint32_t* diffs, uint32_t tl, uint32_t tr, uint32_t bl, uint32_t br){
 // left, top right, bot left, bot right
 static inline const char*
 quadrant_solver(uint32_t tl, uint32_t tr, uint32_t bl, uint32_t br,
-                uint32_t* fore, uint32_t* back){
+                uint32_t* fore, uint32_t* back, unsigned nointerpolate){
   const uint32_t colors[4] = { tl, tr, bl, br };
 //fprintf(stderr, "%08x/%08x/%08x/%08x\n", tl, tr, bl, br);
   uint32_t diffs[sizeof(quadrant_drivers) / sizeof(*quadrant_drivers)];
@@ -248,8 +273,8 @@ quadrant_solver(uint32_t tl, uint32_t tr, uint32_t bl, uint32_t br,
   // the diff of the excluded pair is conveniently located at the inverse
   // location within diffs[] viz mindiffidx.
   // const uint32_t otherdiff = diffs[5 - mindiffidx];
-  *fore = lerp(colors[qd->pair[0]], colors[qd->pair[1]]);
-  *back = lerp(colors[qd->others[0]], colors[qd->others[1]]);
+  *fore = lerp(colors[qd->pair[0]], colors[qd->pair[1]], nointerpolate);
+  *back = lerp(colors[qd->others[0]], colors[qd->others[1]], nointerpolate);
 //fprintf(stderr, "mindiff: %u[%zu] fore: %08x back: %08x %d+%d/%d+%d\n", mindiff, mindiffidx, *fore, *back, qd->pair[0], qd->pair[1], qd->others[0], qd->others[1]);
   const char* egc = qd->egc;
   // break down the excluded pair and lerp
@@ -275,7 +300,8 @@ quadrant_solver(uint32_t tl, uint32_t tr, uint32_t bl, uint32_t br,
   // propose a trilerps; we only need consider the member of the excluded pair
   // closer to the primary lerp. recalculate total diff; merge if lower.
   if(diffs[2] < diffs[3]){
-    unsigned tri = trilerp(colors[qd->pair[0]], colors[qd->pair[1]], colors[qd->others[0]]);
+    unsigned tri = trilerp(colors[qd->pair[0]], colors[qd->pair[1]], colors[qd->others[0]],
+                           nointerpolate);
     ncchannel_rgb8(colors[qd->others[0]], &r2, &g2, &b2);
     ncchannel_rgb8(tri, &roth, &goth, &both);
     if(rgb_diff(r0, g0, b0, roth, goth, both) +
@@ -287,7 +313,8 @@ quadrant_solver(uint32_t tl, uint32_t tr, uint32_t bl, uint32_t br,
     }
 //fprintf(stderr, "quadblitter swap type 1\n");
   }else{
-    unsigned tri = trilerp(colors[qd->pair[0]], colors[qd->pair[1]], colors[qd->others[1]]);
+    unsigned tri = trilerp(colors[qd->pair[0]], colors[qd->pair[1]], colors[qd->others[1]],
+                           nointerpolate);
     ncchannel_rgb8(colors[qd->others[1]], &r2, &g2, &b2);
     ncchannel_rgb8(tri, &roth, &goth, &both);
     if(rgb_diff(r0, g0, b0, roth, goth, both) +
@@ -314,7 +341,7 @@ static inline const char*
 qtrans_check(nccell* c, unsigned blendcolors,
              const unsigned char* rgbbase_tl, const unsigned char* rgbbase_tr,
              const unsigned char* rgbbase_bl, const unsigned char* rgbbase_br,
-             uint32_t transcolor){
+             uint32_t transcolor, unsigned nointerpolate){
   uint32_t tl = 0, tr = 0, bl = 0, br = 0;
   ncchannel_set_rgb8(&tl, rgbbase_tl[0], rgbbase_tl[1], rgbbase_tl[2]);
   ncchannel_set_rgb8(&tr, rgbbase_tr[0], rgbbase_tr[1], rgbbase_tr[2]);
@@ -343,7 +370,7 @@ qtrans_check(nccell* c, unsigned blendcolors,
           cell_set_blitquadrants(c, 0, 0, 1, 0);
           egc = "▖";
         }else{
-          cell_set_fchannel(c, lerp(bl, br));
+          cell_set_fchannel(c, lerp(bl, br, nointerpolate));
           cell_set_blitquadrants(c, 0, 0, 1, 1);
           egc = "▄";
         }
@@ -355,16 +382,16 @@ qtrans_check(nccell* c, unsigned blendcolors,
           cell_set_blitquadrants(c, 0, 1, 0, 0);
           egc = "▝";
         }else{
-          cell_set_fchannel(c, lerp(tr, br));
+          cell_set_fchannel(c, lerp(tr, br, nointerpolate));
           cell_set_blitquadrants(c, 0, 1, 0, 1);
           egc = "▐";
         }
       }else if(rgba_trans_q(rgbbase_br, transcolor)){ // only br is transparent
-        cell_set_fchannel(c, lerp(tr, bl));
+        cell_set_fchannel(c, lerp(tr, bl, nointerpolate));
         cell_set_blitquadrants(c, 0, 1, 1, 0);
         egc = "▞";
       }else{
-        cell_set_fchannel(c, trilerp(tr, bl, br));
+        cell_set_fchannel(c, trilerp(tr, bl, br, nointerpolate));
         cell_set_blitquadrants(c, 0, 1, 1, 1);
         egc = "▟";
       }
@@ -377,31 +404,31 @@ qtrans_check(nccell* c, unsigned blendcolors,
           cell_set_blitquadrants(c, 1, 0, 0, 0);
           egc = "▘";
         }else{
-          cell_set_fchannel(c, lerp(tl, br));
+          cell_set_fchannel(c, lerp(tl, br, nointerpolate));
           cell_set_blitquadrants(c, 1, 0, 0, 1);
           egc = "▚";
         }
       }else if(rgba_trans_q(rgbbase_br, transcolor)){
-        cell_set_fchannel(c, lerp(tl, bl));
+        cell_set_fchannel(c, lerp(tl, bl, nointerpolate));
         cell_set_blitquadrants(c, 1, 0, 1, 0);
         egc = "▌";
       }else{
-        cell_set_fchannel(c, trilerp(tl, bl, br));
+        cell_set_fchannel(c, trilerp(tl, bl, br, nointerpolate));
         cell_set_blitquadrants(c, 1, 0, 1, 1);
         egc = "▙";
       }
     }else if(rgba_trans_q(rgbbase_bl, transcolor)){
       if(rgba_trans_q(rgbbase_br, transcolor)){ // entire bottom is transparent
-        cell_set_fchannel(c, lerp(tl, tr));
+        cell_set_fchannel(c, lerp(tl, tr, nointerpolate));
         cell_set_blitquadrants(c, 1, 1, 0, 0);
         egc = "▀";
       }else{ // only bl is transparent
-        cell_set_fchannel(c, trilerp(tl, tr, br));
+        cell_set_fchannel(c, trilerp(tl, tr, br, nointerpolate));
         cell_set_blitquadrants(c, 1, 1, 0, 1);
         egc = "▜";
       }
     }else if(rgba_trans_q(rgbbase_br, transcolor)){ // only br is transparent
-      cell_set_fchannel(c, trilerp(tl, tr, bl));
+      cell_set_fchannel(c, trilerp(tl, tr, bl, nointerpolate));
       cell_set_blitquadrants(c, 1, 1, 1, 0);
       egc = "▛";
     }else{
@@ -409,11 +436,11 @@ qtrans_check(nccell* c, unsigned blendcolors,
     }
   }
   assert(egc);
-  nccell_set_bg_alpha(c, CELL_ALPHA_TRANSPARENT);
+  nccell_set_bg_alpha(c, NCALPHA_TRANSPARENT);
   if(*egc == '\0'){
-    nccell_set_fg_alpha(c, CELL_ALPHA_TRANSPARENT);
+    nccell_set_fg_alpha(c, NCALPHA_TRANSPARENT);
   }else if(blendcolors){
-    nccell_set_fg_alpha(c, CELL_ALPHA_BLEND);
+    nccell_set_fg_alpha(c, NCALPHA_BLEND);
   }
 //fprintf(stderr, "QBQ: 0x%x\n", cell_blittedquadrants(c));
   return egc;
@@ -422,9 +449,10 @@ qtrans_check(nccell* c, unsigned blendcolors,
 // quadrant blitter. maps 2x2 to each cell. since we only have two colors at
 // our disposal (foreground and background), we lose some fidelity.
 static inline int
-quadrant_blit(ncplane* nc, int linesize, const void* data,
-              int leny, int lenx, const blitterargs* bargs){
-  const int bpp = 32;
+quadrant_blit(ncplane* nc, int linesize, const void* data, int leny, int lenx,
+              const blitterargs* bargs, int bpp){
+  const unsigned nointerpolate = bargs->flags & NCVISUAL_OPTION_NOINTERPOLATE;
+  const bool blendcolors = bargs->flags & NCVISUAL_OPTION_BLEND;
   int dimy, dimx, x, y;
   int total = 0; // number of cells written
   ncplane_dim_yx(nc, &dimy, &dimx);
@@ -461,7 +489,9 @@ quadrant_blit(ncplane* nc, int linesize, const void* data,
       nccell* c = ncplane_cell_ref_yx(nc, y, x);
       c->channels = 0;
       c->stylemask = 0;
-      const char* egc = qtrans_check(c, bargs->u.cell.blendcolors, rgbbase_tl, rgbbase_tr, rgbbase_bl, rgbbase_br, bargs->transcolor);
+      const char* egc = qtrans_check(c, blendcolors, rgbbase_tl, rgbbase_tr,
+                                     rgbbase_bl, rgbbase_br, bargs->transcolor,
+                                     nointerpolate);
       if(egc == NULL){
         uint32_t tl = 0, tr = 0, bl = 0, br = 0;
         ncchannel_set_rgb8(&tl, rgbbase_tl[0], rgbbase_tl[1], rgbbase_tl[2]);
@@ -470,14 +500,14 @@ quadrant_blit(ncplane* nc, int linesize, const void* data,
         ncchannel_set_rgb8(&br, rgbbase_br[0], rgbbase_br[1], rgbbase_br[2]);
         uint32_t bg, fg;
 //fprintf(stderr, "qtrans check: %d/%d\n%08x %08x\n%08x %08x\n", y, x, *(const uint32_t*)rgbbase_tl, *(const uint32_t*)rgbbase_tr, *(const uint32_t*)rgbbase_bl, *(const uint32_t*)rgbbase_br);
-        egc = quadrant_solver(tl, tr, bl, br, &fg, &bg);
+        egc = quadrant_solver(tl, tr, bl, br, &fg, &bg, nointerpolate);
         assert(egc);
 //fprintf(stderr, "%d/%d %08x/%08x\n", y, x, fg, bg);
         cell_set_fchannel(c, fg);
         cell_set_bchannel(c, bg);
-        if(bargs->u.cell.blendcolors){
-          nccell_set_bg_alpha(c, CELL_ALPHA_BLEND);
-          nccell_set_fg_alpha(c, CELL_ALPHA_BLEND);
+        if(blendcolors){
+          nccell_set_bg_alpha(c, NCALPHA_BLEND);
+          nccell_set_fg_alpha(c, NCALPHA_BLEND);
         }
         cell_set_blitquadrants(c, 1, 1, 1, 1);
       }
@@ -492,40 +522,23 @@ quadrant_blit(ncplane* nc, int linesize, const void* data,
   return total;
 }
 
-// take a sum over channels, and the sample count, write back lerped channel
-static inline uint32_t
-generalerp(unsigned rsum, unsigned gsum, unsigned bsum, int count){
-  if(count == 0){
-    assert(0 == rsum);
-    assert(0 == gsum);
-    assert(0 == bsum);
-    return 0;
-  }
-  return CHANNEL_RGB_INITIALIZER((rsum + (count - 1)) / count,
-                                 (gsum + (count - 1)) / count,
-                                 (bsum + (count - 1)) / count);
-}
-
 // Solve for the cell rendered by this 3x2 sample. None of the input pixels may
 // be transparent (that ought already have been handled). We use exhaustive
 // search, which might be quite computationally intensive for the worst case
 // (all six pixels are different colors). We want to solve for the 2-partition
 // of pixels that minimizes total source distance from the resulting lerps.
 static const char*
-sex_solver(const uint32_t rgbas[6], uint64_t* channels, unsigned blendcolors){
+sex_solver(const uint32_t rgbas[6], uint64_t* channels, unsigned blendcolors,
+           unsigned nointerpolate){
   // each element within the set of 64 has an inverse element within the set,
   // for which we would calculate the same total differences, so just handle
   // the first 32. the partition[] bit masks represent combinations of
   // sextants, and their indices correspond to sex[].
   static const char* sex[32] = {
     " ", "🬀", "🬁", "🬃", "🬇", "🬏", "🬞", "🬂", // 0..7
-
     "🬄", "🬈", "🬐", "🬟", "🬅", "🬉", "🬑", "🬠", // 8..15
-
     "🬋", "🬓", "🬢", "🬖", "🬦", "🬭", "🬆", "🬊", // 16..23
-
     "🬒", "🬡", "🬌", "▌", "🬣", "🬗", "🬧", "🬍", // 24..31
-
   };
   static const unsigned partitions[32] = {
     0, // 1 way to arrange 0
@@ -545,20 +558,26 @@ sex_solver(const uint32_t rgbas[6], uint64_t* channels, unsigned blendcolors){
     unsigned gsum0 = 0, gsum1 = 0;
     unsigned bsum0 = 0, bsum1 = 0;
     int insum = 0;
+    int outsum = 0;
     for(unsigned mask = 0 ; mask < 6 ; ++mask){
       if(partitions[glyph] & (1u << mask)){
-        rsum0 += ncpixel_r(rgbas[mask]);
-        gsum0 += ncpixel_g(rgbas[mask]);
-        bsum0 += ncpixel_b(rgbas[mask]);
-        ++insum;
+        if(!nointerpolate || !insum){
+          rsum0 += ncpixel_r(rgbas[mask]);
+          gsum0 += ncpixel_g(rgbas[mask]);
+          bsum0 += ncpixel_b(rgbas[mask]);
+          ++insum;
+        }
       }else{
-        rsum1 += ncpixel_r(rgbas[mask]);
-        gsum1 += ncpixel_g(rgbas[mask]);
-        bsum1 += ncpixel_b(rgbas[mask]);
+        if(!nointerpolate || !outsum){
+          rsum1 += ncpixel_r(rgbas[mask]);
+          gsum1 += ncpixel_g(rgbas[mask]);
+          bsum1 += ncpixel_b(rgbas[mask]);
+          ++outsum;
+        }
       }
     }
     uint32_t l0 = generalerp(rsum0, gsum0, bsum0, insum);
-    uint32_t l1 = generalerp(rsum1, gsum1, bsum1, 6 - insum);
+    uint32_t l1 = generalerp(rsum1, gsum1, bsum1, outsum);
 //fprintf(stderr, "sum0: %06x sum1: %06x insum: %d\n", l0 & 0xffffffu, l1 & 0xffffffu, insum);
     uint32_t totaldiff = 0;
     for(unsigned mask = 0 ; mask < 6 ; ++mask){
@@ -587,15 +606,15 @@ sex_solver(const uint32_t rgbas[6], uint64_t* channels, unsigned blendcolors){
 //fprintf(stderr, "solved for best: %d (%u)\n", best, mindiff);
   assert(best >= 0 && best < 32);
   if(blendcolors){
-    ncchannels_set_fg_alpha(channels, CELL_ALPHA_BLEND);
-    ncchannels_set_bg_alpha(channels, CELL_ALPHA_BLEND);
+    ncchannels_set_fg_alpha(channels, NCALPHA_BLEND);
+    ncchannels_set_bg_alpha(channels, NCALPHA_BLEND);
   }
   return sex[best];
 }
 
 static const char*
 sex_trans_check(cell* c, const uint32_t rgbas[6], unsigned blendcolors,
-                uint32_t transcolor){
+                uint32_t transcolor, unsigned nointerpolate){
   // bit is *set* where sextant *is not*
   // 32: bottom right 16: bottom left
   //  8: middle right  4: middle left
@@ -616,7 +635,7 @@ sex_trans_check(cell* c, const uint32_t rgbas[6], unsigned blendcolors,
   for(unsigned mask = 0 ; mask < 6 ; ++mask){
     if(rgba_trans_p(rgbas[mask], transcolor)){
       transstring |= (1u << mask);
-    }else{
+    }else if(!nointerpolate || !div){
       r += ncpixel_r(rgbas[mask]);
       g += ncpixel_g(rgbas[mask]);
       b += ncpixel_b(rgbas[mask]);
@@ -626,20 +645,20 @@ sex_trans_check(cell* c, const uint32_t rgbas[6], unsigned blendcolors,
   if(transstring == 0){ // there was no transparency
     return NULL;
   }
-  nccell_set_bg_alpha(c, CELL_ALPHA_TRANSPARENT);
+  nccell_set_bg_alpha(c, NCALPHA_TRANSPARENT);
   // there were some transparent pixels. since they get priority, the foreground
   // is just a general lerp across non-transparent pixels.
   const char* egc = sex[transstring];
-  nccell_set_bg_alpha(c, CELL_ALPHA_TRANSPARENT);
+  nccell_set_bg_alpha(c, NCALPHA_TRANSPARENT);
 //fprintf(stderr, "transtring: %u egc: %s\n", transtring, egc);
   if(*egc == ' '){ // entirely transparent
-    nccell_set_fg_alpha(c, CELL_ALPHA_TRANSPARENT);
+    nccell_set_fg_alpha(c, NCALPHA_TRANSPARENT);
     return "";
   }else{ // partially transparent, thus div >= 1
 //fprintf(stderr, "div: %u r: %u g: %u b: %u\n", div, r, g, b);
     cell_set_fchannel(c, generalerp(r, g, b, div));
     if(blendcolors){
-      nccell_set_fg_alpha(c, CELL_ALPHA_BLEND);
+      nccell_set_fg_alpha(c, NCALPHA_BLEND);
     }
     cell_set_blitquadrants(c, !(transstring & 5u), !(transstring & 10u),
                               !(transstring & 20u), !(transstring & 40u));
@@ -651,9 +670,10 @@ sex_trans_check(cell* c, const uint32_t rgbas[6], unsigned blendcolors,
 // sextant blitter. maps 3x2 to each cell. since we only have two colors at
 // our disposal (foreground and background), we lose some fidelity.
 static inline int
-sextant_blit(ncplane* nc, int linesize, const void* data,
-             int leny, int lenx, const blitterargs* bargs){
-  const int bpp = 32;
+sextant_blit(ncplane* nc, int linesize, const void* data, int leny, int lenx,
+             const blitterargs* bargs, int bpp){
+  const unsigned nointerpolate = bargs->flags & NCVISUAL_OPTION_NOINTERPOLATE;
+  const bool blendcolors = bargs->flags & NCVISUAL_OPTION_BLEND;
   int dimy, dimx, x, y;
   int total = 0; // number of cells written
   ncplane_dim_yx(nc, &dimy, &dimx);
@@ -692,9 +712,9 @@ sextant_blit(ncplane* nc, int linesize, const void* data,
       nccell* c = ncplane_cell_ref_yx(nc, y, x);
       c->channels = 0;
       c->stylemask = 0;
-      const char* egc = sex_trans_check(c, rgbas, bargs->u.cell.blendcolors, bargs->transcolor);
+      const char* egc = sex_trans_check(c, rgbas, blendcolors, bargs->transcolor, nointerpolate);
       if(egc == NULL){ // no transparency; run a full solver
-        egc = sex_solver(rgbas, &c->channels, bargs->u.cell.blendcolors);
+        egc = sex_solver(rgbas, &c->channels, blendcolors, nointerpolate);
         cell_set_blitquadrants(c, 1, 1, 1, 1);
       }
 //fprintf(stderr, "sex EGC: %s channels: %016lx\n", egc, c->channels);
@@ -725,9 +745,9 @@ fold_rgb8(unsigned* restrict r, unsigned* restrict g, unsigned* restrict b,
 // visuals with only two colors in a given area, as it packs lots of
 // resolution. always transparent background.
 static inline int
-braille_blit(ncplane* nc, int linesize, const void* data,
-             int leny, int lenx, const blitterargs* bargs){
-  const int bpp = 32;
+braille_blit(ncplane* nc, int linesize, const void* data, int leny, int lenx,
+             const blitterargs* bargs, int bpp){
+  const bool blendcolors = bargs->flags & NCVISUAL_OPTION_BLEND;
   int dimy, dimx, x, y;
   int total = 0; // number of cells written
   ncplane_dim_yx(nc, &dimy, &dimx);
@@ -778,6 +798,11 @@ braille_blit(ncplane* nc, int linesize, const void* data,
           }
         }
       }
+      // braille block is ordered (where 1 is the LSB)
+      //  1 4
+      //  2 5
+      //  3 6
+      //  4 7
       // FIXME fold this into the above?
       if(!rgba_trans_p(*rgbbase_l0, bargs->transcolor)){
         egcidx |= 1u;
@@ -817,15 +842,15 @@ braille_blit(ncplane* nc, int linesize, const void* data,
       // effective in that case anyway
       c->channels = 0;
       c->stylemask = 0;
-      if(bargs->u.cell.blendcolors){
-        nccell_set_fg_alpha(c, CELL_ALPHA_BLEND);
+      if(blendcolors){
+        nccell_set_fg_alpha(c, NCALPHA_BLEND);
       }
       // FIXME for now, we just sample, color-wise, and always draw crap.
       // more complicated to do optimally than quadrants, for sure. ideally,
       // we only get one color in an area.
-      nccell_set_bg_alpha(c, CELL_ALPHA_TRANSPARENT);
+      nccell_set_bg_alpha(c, NCALPHA_TRANSPARENT);
       if(!egcidx){
-          nccell_set_fg_alpha(c, CELL_ALPHA_TRANSPARENT);
+          nccell_set_fg_alpha(c, NCALPHA_TRANSPARENT);
           // FIXME else look for pairs of transparency!
       }else{
         if(blends){
@@ -848,24 +873,39 @@ braille_blit(ncplane* nc, int linesize, const void* data,
 
 // NCBLIT_DEFAULT is not included, as it has no defined properties. It ought
 // be replaced with some real blitter implementation by the calling widget.
+// The order of contents is critical for 'egcs': ncplane_as_rgba() uses these
+// arrays to map cells to source pixels. Map the upper-left logical bit to
+// 1, and increase to the right, followed by down. The first egc ought thus
+// always be space, to indicate an empty cell (all zeroes). These need be
+// kept in the same order as the enums!
 static struct blitset notcurses_blitters[] = {
-   { .geom = NCBLIT_8x1,     .width = 1, .height = 8, .egcs = L" ▁▂▃▄▅▆▇█",
-     .blit = tria_blit,      .name = "eightstep",     .fill = false, },
-   { .geom = NCBLIT_1x1,     .width = 1, .height = 1, .egcs = L" █",
+   { .geom = NCBLIT_1x1,     .width = 1, .height = 1,
+     .egcs = L" █", .plotegcs = L" █",
      .blit = tria_blit_ascii,.name = "ascii",         .fill = false, },
-   { .geom = NCBLIT_2x1,     .width = 1, .height = 2, .egcs = L" ▄█",
+   { .geom = NCBLIT_2x1,     .width = 1, .height = 2,
+     .egcs = NCHALFBLOCKS,   .plotegcs = L" ▄█",
      .blit = tria_blit,      .name = "half",          .fill = false, },
-   { .geom = NCBLIT_2x2,     .width = 2, .height = 2, .egcs = L" ▗▐▖▄▟▌▙█",
+   { .geom = NCBLIT_2x2,     .width = 2, .height = 2,
+     .egcs = NCQUADBLOCKS,   .plotegcs = L" ▗▐▖▄▟▌▙█",
      .blit = quadrant_blit,  .name = "quad",          .fill = false, },
-   { .geom = NCBLIT_3x2,     .width = 2, .height = 3, .egcs = L" 🬞🬦▐🬏🬭🬵🬷🬓🬱🬹🬻▌🬲🬺█",
+   { .geom = NCBLIT_3x2,     .width = 2, .height = 3,
+     .egcs = NCSEXBLOCKS,    .plotegcs = L" 🬞🬦▐🬏🬭🬵🬷🬓🬱🬹🬻▌🬲🬺█",
      .blit = sextant_blit,   .name = "sex",           .fill = false, },
-   { .geom = NCBLIT_4x1,     .width = 1, .height = 4, .egcs = L" ▂▄▆█",
-     .blit = tria_blit,      .name = "fourstep",      .fill = false, },
-   { .geom = NCBLIT_BRAILLE, .width = 2, .height = 4, .egcs = L"⠀⢀⢠⢰⢸⡀⣀⣠⣰⣸⡄⣄⣤⣴⣼⡆⣆⣦⣶⣾⡇⣇⣧⣷⣿",
+   { .geom = NCBLIT_BRAILLE, .width = 2, .height = 4,
+     .egcs = NCBRAILLEEGCS,
+     .plotegcs = L"⠀⢀⢠⢰⢸⡀⣀⣠⣰⣸⡄⣄⣤⣴⣼⡆⣆⣦⣶⣾⡇⣇⣧⣷⣿",
      .blit = braille_blit,   .name = "braille",       .fill = true,  },
-   { .geom = NCBLIT_PIXEL,   .width = 1, .height = 1, .egcs = L"",
+   { .geom = NCBLIT_PIXEL,   .width = 1, .height = 1,
+     .egcs = L"", .plotegcs = NULL,
      .blit = sixel_blit,     .name = "pixel",         .fill = true,  },
-   { .geom = 0,              .width = 0, .height = 0, .egcs = NULL,
+   { .geom = NCBLIT_4x1,     .width = 1, .height = 4,
+     .egcs = NULL, .plotegcs = L" ▂▄▆█",
+     .blit = tria_blit,      .name = "fourstep",      .fill = false, },
+   { .geom = NCBLIT_8x1,     .width = 1, .height = 8,
+     .egcs = NULL, .plotegcs = NCEIGHTHSBOTTOM,
+     .blit = tria_blit,      .name = "eightstep",     .fill = false, },
+   { .geom = 0,              .width = 0, .height = 0,
+     .egcs = NULL, .plotegcs = NULL,
      .blit = NULL,           .name = NULL,            .fill = false,  },
 };
 
@@ -882,7 +922,7 @@ const struct blitset* lookup_blitset(const tinfo* tcache, ncblitter_e setid, boo
     return NULL;
   }
   // without braille support, NCBLIT_BRAILLE decays to NCBLIT_3x2
-  if(!tcache->braille && setid == NCBLIT_BRAILLE){
+  if(!tcache->caps.braille && setid == NCBLIT_BRAILLE){
     if(may_degrade){
       setid = NCBLIT_3x2;
     }else{
@@ -890,7 +930,7 @@ const struct blitset* lookup_blitset(const tinfo* tcache, ncblitter_e setid, boo
     }
   }
   // without bitmap support, NCBLIT_PIXEL decays to NCBLIT_3x2
-  if(!tcache->bitmap_supported && setid == NCBLIT_PIXEL){
+  if(!tcache->pixel_draw && setid == NCBLIT_PIXEL){
     if(may_degrade){
       setid = NCBLIT_3x2;
     }else{
@@ -898,7 +938,7 @@ const struct blitset* lookup_blitset(const tinfo* tcache, ncblitter_e setid, boo
     }
   }
   // without sextant support, NCBLIT_3x2 decays to NCBLIT_2x2
-  if(!tcache->sextants && setid == NCBLIT_3x2){
+  if(!tcache->caps.sextants && setid == NCBLIT_3x2){
     if(may_degrade){
       setid = NCBLIT_2x2;
     }else{
@@ -906,7 +946,7 @@ const struct blitset* lookup_blitset(const tinfo* tcache, ncblitter_e setid, boo
     }
   }
   // without quadrant support, NCBLIT_2x2 decays to NCBLIT_2x1
-  if(!tcache->quadrants && setid == NCBLIT_2x2){
+  if(!tcache->caps.quadrants && setid == NCBLIT_2x2){
     if(may_degrade){
       setid = NCBLIT_2x1;
     }else{
@@ -914,21 +954,15 @@ const struct blitset* lookup_blitset(const tinfo* tcache, ncblitter_e setid, boo
     }
   }
   // the only viable blitters in ASCII are NCBLIT_1x1 and NCBLIT_PIXEL
-  if(!tcache->utf8 && (setid != NCBLIT_1x1 && setid != NCBLIT_PIXEL)){
+  if(!tcache->caps.utf8 && (setid != NCBLIT_1x1 && setid != NCBLIT_PIXEL)){
     if(may_degrade){
       setid = NCBLIT_1x1;
     }else{
       return NULL;
     }
   }
-  const struct blitset* bset = notcurses_blitters;
-  while(bset->egcs){
-    if(bset->geom == setid){
-      return bset;
-    }
-    ++bset;
-  }
-  return NULL;
+  assert(setid == notcurses_blitters[setid - 1].geom);
+  return &notcurses_blitters[setid - 1];
 }
 
 int notcurses_lex_blitter(const char* op, ncblitter_e* blitfxn){
@@ -1034,15 +1068,15 @@ int ncblit_rgba(const void* data, int linesize, const struct ncvisual_options* v
     return -1;
   }
   blitterargs bargs = {
+    .flags = vopts->flags,
     .u = {
       .cell = {
         .placey = vopts->y,
         .placex = vopts->x,
-        .blendcolors = (vopts->flags & NCVISUAL_OPTION_BLEND),
       },
     },
   };
-  return bset->blit(nc, linesize, data, leny, lenx, &bargs);
+  return bset->blit(nc, linesize, data, leny, lenx, &bargs, 32);
 }
 
 ncblitter_e ncvisual_media_defblitter(const notcurses* nc, ncscale_e scale){

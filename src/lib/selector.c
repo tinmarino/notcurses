@@ -70,8 +70,8 @@ static int
 ncselector_draw(ncselector* n){
   ncplane_erase(n->ncp);
   nccell transchar = CELL_TRIVIAL_INITIALIZER;
-  nccell_set_fg_alpha(&transchar, CELL_ALPHA_TRANSPARENT);
-  nccell_set_bg_alpha(&transchar, CELL_ALPHA_TRANSPARENT);
+  nccell_set_fg_alpha(&transchar, NCALPHA_TRANSPARENT);
+  nccell_set_bg_alpha(&transchar, NCALPHA_TRANSPARENT);
   // if we have a title, we'll draw a riser. the riser is two rows tall, and
   // exactly four columns longer than the title, and aligned to the right. we
   // draw a rounded box. the body will blow part or all of the bottom away.
@@ -238,7 +238,7 @@ ncselector* ncselector_create(ncplane* n, const ncselector_options* opts){
   }
   unsigned itemcount = 0;
   if(opts->flags > 0){
-    logwarn(ncplane_notcurses(n), "Provided unsupported flags %016jx\n", (uintmax_t)opts->flags);
+    logwarn("Provided unsupported flags %016jx\n", (uintmax_t)opts->flags);
   }
   if(opts->items){
     for(const struct ncselector_item* i = opts->items ; i->option ; ++i){
@@ -564,8 +564,8 @@ static int
 ncmultiselector_draw(ncmultiselector* n){
   ncplane_erase(n->ncp);
   nccell transchar = CELL_TRIVIAL_INITIALIZER;
-  nccell_set_fg_alpha(&transchar, CELL_ALPHA_TRANSPARENT);
-  nccell_set_bg_alpha(&transchar, CELL_ALPHA_TRANSPARENT);
+  nccell_set_fg_alpha(&transchar, NCALPHA_TRANSPARENT);
+  nccell_set_bg_alpha(&transchar, NCALPHA_TRANSPARENT);
   // if we have a title, we'll draw a riser. the riser is two rows tall, and
   // exactly four columns longer than the title, and aligned to the right. we
   // draw a rounded box. the body will blow part or all of the bottom away.
@@ -834,7 +834,7 @@ ncmultiselector* ncmultiselector_create(ncplane* n, const ncmultiselector_option
     opts = &zeroed;
   }
   if(opts->flags > 0){
-    logwarn(ncplane_notcurses(n), "Provided unsupported flags %016jx\n", (uintmax_t)opts->flags);
+    logwarn("Provided unsupported flags %016jx\n", (uintmax_t)opts->flags);
   }
   unsigned itemcount = 0;
   if(opts->items){

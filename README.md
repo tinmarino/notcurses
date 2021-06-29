@@ -1,19 +1,17 @@
 # Notcurses: blingful TUIs and character graphics
 
-* **What it is**: a library facilitating complex TUIs on modern terminal
-    emulators, supporting vivid colors, multimedia, threads, and Unicode to the
-    maximum degree possible. [Things](https://www.youtube.com/watch?v=cYhZ7myXyyg) can be done with
-    Notcurses that simply can't be done with NCURSES. It is furthermore
-    fast as shit.
-
-* **What it is not**: a source-compatible X/Open Curses implementation, nor a
-    replacement for NCURSES on existing systems.
+**What it is**: a library facilitating complex TUIs on modern terminal
+emulators, supporting vivid colors, multimedia, threads, and Unicode to the
+maximum degree possible. [Things](https://www.youtube.com/watch?v=dcjkezf1ARY) can be done with
+Notcurses that simply can't be done with NCURSES. It is furthermore
+fast as shit. **What it is not**: a source-compatible X/Open Curses implementation, nor a
+replacement for NCURSES on existing systems.
 
 <p align="center">
-<a href="https://www.youtube.com/watch?v=cYhZ7myXyyg"><img src="https://img.youtube.com/vi/cYhZ7myXyyg/0.jpg" alt="setting the standard (hype video)"/></a>
+<a href="https://www.youtube.com/watch?v=dcjkezf1ARY"><img src="https://raw.githubusercontent.com/dankamongmen/notcurses/gh-pages/notcurses-logo.png" alt="setting the standard (hype video)"/></a>
+birthed screaming into this world by <a href="https://nick-black.com/dankwiki/index.php/Hack_on">nick black</a> (<a href="mailto:nickblack@linux.com">&lt;nickblack@linux.com&gt;</a>)
 </p>
 
-birthed screaming into this world by [nick black](https://nick-black.com/dankwiki/index.php/Hack_on) (<nickblack@linux.com>)
 * c++ wrappers by [marek habersack](http://twistedcode.net/blog/) (<grendel@twistedcode.net>)
 * rust wrappers by José Luis Cruz (<joseluis@andamira.net>)
 * python wrappers by igo95862 (<igo95862@yandex.ru>)
@@ -41,17 +39,20 @@ sudo add-apt-repository ppa:dankamongmen/notcurses
 sudo apt-get update
 ```
 
-![Linux](https://img.shields.io/badge/-Linux-grey?logo=linux)
-![FreeBSD](https://img.shields.io/badge/-FreeBSD-grey?logo=freebsd)
-[![Build](https://drone.dsscaw.com:4443/api/badges/dankamongmen/notcurses/status.svg)](https://drone.dsscaw.com:4443/dankamongmen/notcurses)
-[![pypi_version](https://img.shields.io/pypi/v/notcurses?label=pypi)](https://pypi.org/project/notcurses)
-[![crates.io](https://img.shields.io/crates/v/libnotcurses-sys.svg)](https://crates.io/crates/libnotcurses-sys)
-![Matrix](https://img.shields.io/matrix/notcursesdev:matrix.org?label=matrixchat)
-[![Sponsor](https://img.shields.io/badge/-Sponsor-red?logo=github)](https://github.com/sponsors/dankamongmen)
-
 <a href="https://repology.org/project/notcurses/versions">
 <img src="https://repology.org/badge/vertical-allrepos/notcurses.svg" alt="Packaging status" align="right">
 </a>
+
+![Linux](https://img.shields.io/badge/-Linux-grey?logo=linux)
+![FreeBSD](https://img.shields.io/badge/-FreeBSD-grey?logo=freebsd)
+[![Matrix](https://img.shields.io/matrix/notcursesdev:matrix.org?label=matrixchat)](https://app.element.io/#/room/#notcursesdev:matrix.org)
+[![Sponsor](https://img.shields.io/badge/-Sponsor-red?logo=github)](https://github.com/sponsors/dankamongmen)
+
+[![Build](https://drone.dsscaw.com:4443/api/badges/dankamongmen/notcurses/status.svg)](https://drone.dsscaw.com:4443/dankamongmen/notcurses)
+[![🐧 UbuntuTests](https://github.com/dankamongmen/notcurses/actions/workflows/ubuntu_test.yml/badge.svg)](https://github.com/dankamongmen/notcurses/actions/workflows/ubuntu_test.yml)
+
+[![pypi_version](https://img.shields.io/pypi/v/notcurses?label=pypi)](https://pypi.org/project/notcurses)
+[![crates.io](https://img.shields.io/crates/v/libnotcurses-sys.svg)](https://crates.io/crates/libnotcurses-sys)
 
 ## Introduction
 
@@ -77,11 +78,10 @@ Why use this non-standard library?
   consideration from the beginning.
 
 * A more orderly surface than that codified by X/Open: Exported identifiers are
-  prefixed to avoid common namespace collisions. The library object exports a
-  minimal set of symbols. Where reasonable, `static inline` header-only code is
-  used. This facilitates compiler optimizations, and reduces loader time.
-  Notcurses can be built without its multimedia functionality, requiring a
-  significantly lesser set of dependencies.
+  prefixed to avoid common namespace collisions. Where reasonable,
+  `static inline` header-only code is used. This facilitates compiler
+  optimizations, and reduces loader time. Notcurses can be built without its
+  multimedia functionality, requiring a significantly lesser set of dependencies.
 
 * All APIs natively support the Universal Character Set (Unicode). The `nccell`
   API is based around Unicode's [Extended Grapheme Cluster](https://unicode.org/reports/tr29/) concept.
@@ -97,7 +97,7 @@ Why use this non-standard library?
 
 Much of the above can be had with NCURSES, but they're not what NCURSES was
 *designed* for. On the other hand, if you're targeting industrial or critical
-applications, or wish to benefit from its time-tested reliability and
+applications, or wish to benefit from time-tested reliability and
 portability, you should by all means use that fine library.
 
 ## Requirements
@@ -109,7 +109,7 @@ may well be possible to use still older versions. Let me know of any successes!
 * (OPTIONAL) (OpenImageIO, testing, C++ bindings): A C++17 compiler
 * (build+runtime) From [NCURSES](https://invisible-island.net/ncurses/announce.html): terminfo 6.1+
 * (build+runtime) GNU [libunistring](https://www.gnu.org/software/libunistring/) 0.9.10+
-* (build+runtime) GNU [Readline](https://www.gnu.org/software/readline/) 8.0+
+* (OPTIONAL) (build+runtime) GNU [Readline](https://www.gnu.org/software/readline/) 8.0+
 * (OPTIONAL) (build+runtime) From QR-Code-generator: [libqrcodegen](https://github.com/nayuki/QR-Code-generator) 1.5.0+
 * (OPTIONAL) (build+runtime) From [FFmpeg](https://www.ffmpeg.org/): libswscale 5.0+, libavformat 57.0+, libavutil 56.0+
 * (OPTIONAL) (build+runtime) [OpenImageIO](https://github.com/OpenImageIO/oiio) 2.15.0+, requires C++
@@ -123,12 +123,13 @@ may well be possible to use still older versions. Let me know of any successes!
 
 ## Included tools
 
-Seven binaries are installed as part of Notcurses:
+Eight binaries are installed as part of Notcurses:
 * `ncls`: an `ls` that displays multimedia in the terminal
 * `ncneofetch`: a [neofetch](https://github.com/dylanaraps/neofetch) ripoff
 * `ncplayer`: renders visual media (images/videos)
 * `nctetris`: a tetris clone
 * `notcurses-demo`: some demonstration code
+* `notcurses-info`: detect and print terminal capabilities/diagnostics
 * `notcurses-input`: decode and print keypresses
 * `notcurses-tester`: unit testing
 
@@ -181,19 +182,11 @@ each release. Download it, and install the contents as you deem fit.
   set to **Wide**, not narrow (if that doesn't work, ensure it is set to
   **Narrow**, heh).
 
-### TrueColor detection
-
-Notcurses primarily loads control sequences from `terminfo(5)`, using the
-database entry specified by the `TERM` environment variable. 24-bit "TrueColor"
-color support (or at least the ability to specify 3 8-bit channels as arguments
-to `setaf` and `setbf`) is indicated by the `rgb` terminfo capability. Many
-terminals with RGB support do not advertise the `rgb` capability. If you
-believe your terminal to support 24-bit TrueColor, this can be indicated by
-exporting the `COLORTERM` environment variable as `truecolor` or `24bit`.
-Note that some terminals accept a 24-bit specification, but map it down to
-fewer colors.
-
-Since 2.3.1, 8bpc RGB is always enabled for Kitty, Alacritty, and foot.
+* If your terminal supports 3x8bit RGB color via `setaf` and `setbf` (most modern
+  terminals), but doesn't export the `rgb` terminfo capability, you can export
+  the `COLORTERM` environment variable as `truecolor` or `24bit`. Note that some
+  terminals accept a 24-bit specification, but map it down to fewer colors.
+  RGB is enabled whenever [Foot, Contour, WezTerm, or Kitty](TERMINALS.md) is identified.
 
 ### Fonts
 
@@ -201,9 +194,10 @@ Fonts end up being a whole thing, little of which is pleasant. I'll write this
 up someday **FIXME**.
 
 It is worth knowing that several terminals draw the block characters directly,
-rather than loading them from a font.
+rather than loading them from a font. This is generally desirable. To inspect
+your environment's rendering of drawing characters, run `notcurses-info`.
 
-### FAQs
+## FAQs
 
 If things break or seem otherwise lackluster, **please** consult the
 [Environment Notes](#environment_notes) section! You **need** to have a correct
@@ -216,11 +210,13 @@ to breaking under incorrect `TERM` values. If you're not using `xterm`, your
 
 * **Q:** Can I have Notcurses without this huge multimedia stack? **A:** Yes! Build with `-DUSE_MULTIMEDIA=none`.
 
+* **Q:** Can I build this individual Notcurses program without aforementioned multimedia stack? **A:** Again yes! Use `notcurses_core_init()` or `ncdirect_core_init()` in place of `notcurses_init()`/`ncdirect_init()`, and link with `-lnotcurses-core`. Your application will likely start a few milliseconds faster; more importantly, it will link against minimal Notcurses installations.
+
 * **Q:** Notcurses looks like absolute crap in `screen`. **A:** `screen` doesn't support RGB colors (at least as of 4.08.00); if you have `COLORTERM` defined, you'll have a bad time. If you have a `screen` that was compiled with `--enable-colors256`, try exporting `TERM=screen-256color` as opposed to `TERM=screen`.
 
 * **Q:** Notcurses looks like absolute crap in `mosh`. **A**: Yeah it sure does. I'm not yet sure what's up.
 
-* **Q:** Why didn't you just use Sixel? **A:** Many terminal emulators don't support Sixel. Sixel doesn't work well with mouse selection. Sixel tends to be horribly inefficient, and has a limited color palette. With that said, both Sixel and the Kitty bitmap protocol are well-supported.
+* **Q:** Why didn't you just render everything to Sixel? **A:** That's not a TUI; it's a slow and inflexible GUI. Many terminal emulators don't support Sixel. Sixel doesn't work well with mouse selection. Sixel has a limited color palette. With that said, both Sixel and the Kitty bitmap protocol are well-supported.
 
 * **Q:** I'm not seeing `NCKEY_RESIZE` until I press some other key. **A:** You've almost certainly failed to mask `SIGWINCH` in some thread, and that thread is receiving the signal instead of the thread which called `notcurses_getc_blocking()`. As a result, the `poll()` is not interrupted. Call `pthread_sigmask()` before spawning any threads.
 
@@ -230,7 +226,7 @@ to breaking under incorrect `TERM` values. If you're not using `xterm`, your
 
 * **Q:** Why isn't there an `ncplane_box_yx()`? Do you hate orthogonality, you dullard? **A:** `ncplane_box()` and friends already have far too many arguments, you monster.
 
-* **Q:** Why doesn't Notcurses support 10- or 16-bit color? **A:** Notcurses supports 24 bits of color, spread across three eight-bit channels. You presumably mean 10-bit-per-channel color. Notcurses will support it when a terminal supports it.
+* **Q:** Why doesn't Notcurses support 10- or 16-bit color? **A:** Notcurses supports 24 bits of color, spread across three eight-bit channels. You presumably mean 10-bit-per-channel color. I needed those six bits for other things. When terminals support it, Notcurses might support it.
 
 * **Q:** The name is dumb. **A:** That's not a question?
 
@@ -244,7 +240,7 @@ to breaking under incorrect `TERM` values. If you're not using `xterm`, your
 
 * **Q:** I ran `notcurses-demo`, but my table numbers don't match the Notcurses banner numbers, you charlatan. **A:** `notcurses-demo` renders several frames beyond the actual demos.
 
-* **Q:** When my program exits, I don't have a cursor, or text is invisible, or colors are weird, <i>ad nauseam</i>. **A:** Ensure you're calling `notcurses_stop()`/`ncdirect_stop()` on all exit paths, including fatal signals.
+* **Q:** When my program exits, I don't have a cursor, or text is invisible, or colors are weird, <i>ad nauseam</i>. **A:** Ensure you're calling `notcurses_stop()`/`ncdirect_stop()` on all exit paths, including fatal signals (note that, by default, Notcurses installs handlers for most fatal signals to do exactly this).
 
 * **Q:** How can I use Direct Mode in conjunction with libreadline? **A:** Pass `NCDIRECT_OPTION_CBREAK` to `ncdirect_init()`, and ensure you do not pass `NCDIRECT_OPTION_NO_READLINE`. If you'd like, set `rl_readline_name` and `rl_attempted_completion_function` prior to calling `ncdirect_init()`. With that said, consider using a Notcurses `ncreader`.
 
@@ -254,13 +250,15 @@ to breaking under incorrect `TERM` values. If you're not using `xterm`, your
 
 * **Q:** Why does my right-to-left text appear left-to-right? **A:** Notcurses doesn't honor the BiDi state machine, and in fact forces left-to-right with BiDi codes. Likewise, ultra-wide glyphs will have interesting effects. ﷽!
 
-* **Q:** I get linker errors when statically linking. **A:** Are you linking all necessary libraries? Use `pkg-config --static --libs notcurses` to discover them.
+* **Q:** I get linker errors when statically linking. **A:** Are you linking all necessary libraries? Use `pkg-config --static --libs notcurses` (or `--libs notcurses-core`) to discover them.
 
 * **Q:** Can I avoid manually exporting `COLORTERM=24bit` everywhere? **A:** Sure. Add `SendEnv COLORTERM` to `.ssh/config`, and `AcceptEnv COLORTERM` to `sshd_config` on the remote server. Yes, this will probably require root on the remote server. Don't blame me, man; I didn't do it.
 
 * **Q:** How about *arbitrary image manipulation here* functionality? **A:** I'm not going to beat ImageMagick et al. on image manipulation, but you can load an `ncvisual` from RGBA memory using `ncvisual_from_rgba()`.
 
-* **Q:** My program locks up when I run `notcurses_check_pixel_support()`. **A**: Detecting bitmap support requires interrogating the terminal. If the terminal doesn't reply to standard interrogations, send upstream a patch, or use a different terminal. Generally, only old and unsupported terminal emulators exhibit this behavior.
+* **Q:** My program locks up during initialization. **A**: Notcurses interrogates the terminal. If the terminal doesn't reply to standard interrogations, file a Notcurses bug, send upstream a patch, or use a different terminal. No known terminal emulators exhibit this behavior.
+
+* **Q:** How do I mix Rendered and Direct mode? **A:** You really don't want to. You can stream a subprocess to a plane with the `ncsubproc` widget.
 
 ## Useful links
 
@@ -274,6 +272,7 @@ to breaking under incorrect `TERM` values. If you're not using `xterm`, your
 * [Unicode 13.1 Full Emoji List](https://unicode.org/emoji/charts/full-emoji-list.html)
 * [Unicode Standard Annex #29 Text Segmentation](http://www.unicode.org/reports/tr29)
 * [Unicode Standard Annex #15 Normalization Forms](https://unicode.org/reports/tr15/)
+* [mintty tips](https://github.com/mintty/mintty/wiki/Tips)
 * [The TTY demystified](http://www.linusakesson.net/programming/tty/)
 * [Dark Corners of Unicode](https://eev.ee/blog/2015/09/12/dark-corners-of-unicode/)
 * [UTF-8 Decoder Capability and Stress Test](https://www.cl.cam.ac.uk/~mgk25/ucs/examples/UTF-8-test.txt)

@@ -16,7 +16,7 @@ On an APT-based distribution, run:
 
 If you only intend to build core Notcurses (without multimedia support), run:
 
-`apt-get install build-essential cmake libncurses-dev libreadline-dev libqrcodegen-dev pandoc pkg-config`
+`apt-get install build-essential cmake doctest-dev libncurses-dev libreadline-dev libqrcodegen-dev libunistring-dev pandoc pkg-config`
 
 If you want to build the Python wrappers, you'll also need:
 

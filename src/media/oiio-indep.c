@@ -6,8 +6,9 @@
 
 int oiio_blit_dispatch(struct ncplane* nc, const struct blitset* bset,
                        int linesize, const void* data,
-                       int leny, int lenx, const blitterargs* bargs){
-  if(rgba_blit_dispatch(nc, bset, linesize, data, leny, lenx, bargs) < 0){
+                       int leny, int lenx, const blitterargs* bargs,
+                       int bpp){
+  if(rgba_blit_dispatch(nc, bset, linesize, data, leny, lenx, bargs, bpp) < 0){
     return -1;
   }
   return 0;
@@ -69,13 +70,13 @@ char* oiio_subtitle(const ncvisual* ncv) { // no support in OIIO
   return NULL;
 }
 
-int oiio_init(int loglevel __attribute__ ((unused))) {
+int oiio_init(int logl __attribute__ ((unused))) {
   // FIXME set OIIO global attribute "debug" based on loglevel
   // FIXME check OIIO_VERSION_STRING components against linked openimageio_version()
   return 0; // allow success here
 }
 
-static const ncvisual_implementation oiio_impl = {
+const ncvisual_implementation local_visual_implementation = {
   .visual_init = oiio_init,
   .visual_printbanner = oiio_printbanner,
   .visual_blit = oiio_blit,
@@ -91,7 +92,5 @@ static const ncvisual_implementation oiio_impl = {
   .canopen_images = true,
   .canopen_videos = false,
 };
-
-const ncvisual_implementation* local_visual_implementation = &oiio_impl;
 
 #endif

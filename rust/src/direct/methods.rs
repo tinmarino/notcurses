@@ -2,11 +2,10 @@
 
 use core::ptr::{null, null_mut};
 
-use crate::ffi::sigset_t;
 use crate::{
-    cstring, error, error_ref_mut, rstring, NcAlign, NcBlitter, NcChannelPair, NcColor, NcDim,
-    NcDirect, NcDirectFlags, NcEgc, NcError, NcInput, NcPaletteIndex, NcPlane, NcResult, NcRgb,
-    NcScale, NcStyleMask, NcTime, NCRESULT_ERR,
+    cstring, error, error_ref_mut, rstring, NcAlign, NcBlitter, NcCapabilities, NcChannels,
+    NcComponent, NcDim, NcDirect, NcDirectFlags, NcError, NcInput, NcOffset, NcPaletteIndex,
+    NcPlane, NcResult, NcRgb, NcScale, NcStyle, NcTime, NCRESULT_ERR,
 };
 
 /// # `NcDirect` constructors and destructors
@@ -30,6 +29,9 @@ impl NcDirect {
     /// `flags` is a bitmask over:
     /// - [NCDIRECT_OPTION_INHIBIT_CBREAK][crate::NCDIRECT_OPTION_INHIBIT_CBREAK]
     /// - [NCDIRECT_OPTION_INHIBIT_SETLOCALE][crate::NCDIRECT_OPTION_INHIBIT_SETLOCALE]
+    /// - [NCDIRECT_OPTION_NO_QUIT_SIGHANDLERS][crate::NCDIRECT_OPTION_NO_QUIT_SIGHANDLERS]
+    /// - [NCDIRECT_OPTION_VERBOSE][crate::NCDIRECT_OPTION_VERBOSE]
+    /// - [NCDIRECT_OPTION_VERY_VERBOSE][crate::NCDIRECT_OPTION_VERY_VERBOSE]
     ///
     /// *C style function: [ncdirect_init()][crate::ncdirect_init].*
     pub fn with_flags<'a>(flags: NcDirectFlags) -> NcResult<&'a mut NcDirect> {
@@ -61,31 +63,27 @@ impl NcDirect {
         error![unsafe { crate::ncdirect_flush(self) }, "NcDirect.clear()"]
     }
 
-    /// Takes the result of [render_frame()][NcDirect#method.render_frame]
+    /// Takes the result of [`render_frame`][NcDirect#method.render_frame]
     /// and writes it to the output.
     ///
-    /// The `align`, `blitter`, and `scale` arguments must be the same as those
-    /// passed to render_frame().
-    ///
     /// *C style function: [ncdirect_raster_frame()][crate::ncdirect_raster_frame].*
-    pub fn raster_frame(&mut self, faken: &mut NcPlane, align: NcAlign) -> NcResult<()> {
+    pub fn raster_frame(&mut self, frame: &mut NcPlane, align: NcAlign) -> NcResult<()> {
         error![
-            unsafe { crate::ncdirect_raster_frame(self, faken, align) },
+            unsafe { crate::ncdirect_raster_frame(self, frame, align) },
             "NcDirect.raster_frame()"
         ]
     }
 
     /// Renders an image using the specified blitter and scaling,
-    /// but do not write the result.
+    /// but doesn't write the result.
     ///
     /// The image may be arbitrarily many rows -- the output will scroll --
     /// but will only occupy the column of the cursor, and those to the right.
     ///
     /// To actually write (and free) this, invoke ncdirect_raster_frame().
-    /// and writes it to the output.
     ///
-    /// The `align`, `blitter`, and `scale` arguments must be the same as those
-    /// passed to render_frame().
+    /// `max_y' and 'max_x` (cell geometry, *not* pixel), if greater than 0,
+    /// are used for scaling; the terminal's geometry is otherwise used.
     ///
     /// *C style function: [ncdirect_render_frame()][crate::ncdirect_render_frame].*
     pub fn render_frame<'a>(
@@ -93,11 +91,18 @@ impl NcDirect {
         filename: &str,
         blitter: NcBlitter,
         scale: NcScale,
-        maxy: i32,
-        maxx: i32,
+        max_y: NcDim,
+        max_x: NcDim,
     ) -> NcResult<&'a mut NcPlane> {
         let res = unsafe {
-            crate::ncdirect_render_frame(self, cstring![filename], blitter, scale, maxy, maxx)
+            crate::ncdirect_render_frame(
+                self,
+                cstring![filename],
+                blitter,
+                scale,
+                max_y as i32,
+                max_x as i32,
+            )
         };
         error_ref_mut![
             res,
@@ -137,7 +142,7 @@ impl NcDirect {
     }
 }
 
-/// ## NcDirect methods: `NcPaletteIndex`, `NcRgb`, `NcStyleMask` & default color
+/// ## NcDirect methods: `NcPaletteIndex`, `NcRgb`, `NcStyle` & default color
 impl NcDirect {
     /// Sets the foreground [NcPaletteIndex].
     ///
@@ -197,20 +202,30 @@ impl NcDirect {
         ]
     }
 
-    /// Sets the foreground [NcColor] components.
+    /// Sets the foreground [NcComponent] components.
     ///
     /// *C style function: [ncdirect_set_fg_rgb8()][crate::ncdirect_set_fg_rgb8].*
-    pub fn set_fg_rgb8(&mut self, red: NcColor, green: NcColor, blue: NcColor) -> NcResult<()> {
+    pub fn set_fg_rgb8(
+        &mut self,
+        red: NcComponent,
+        green: NcComponent,
+        blue: NcComponent,
+    ) -> NcResult<()> {
         error![
             crate::ncdirect_set_fg_rgb8(self, red, green, blue),
             &format!("NcDirect.set_fg_rgb8({}, {}, {})", red, green, blue)
         ]
     }
 
-    /// Sets the background [NcColor] components.
+    /// Sets the background [NcComponent] components.
     ///
     /// *C style function: [ncdirect_set_bg_rgb()][crate::ncdirect_set_bg_rgb].*
-    pub fn set_bg_rgb8(&mut self, red: NcColor, green: NcColor, blue: NcColor) -> NcResult<()> {
+    pub fn set_bg_rgb8(
+        &mut self,
+        red: NcComponent,
+        green: NcComponent,
+        blue: NcComponent,
+    ) -> NcResult<()> {
         error![
             crate::ncdirect_set_bg_rgb8(self, red, green, blue),
             &format!("NcDirect.set_bg_rgb8({}, {}, {})", red, green, blue)
@@ -220,7 +235,7 @@ impl NcDirect {
     /// Removes the specified styles.
     ///
     /// *C style function: [ncdirect_off_styles()][crate::ncdirect_off_styles].*
-    pub fn styles_off(&mut self, stylebits: NcStyleMask) -> NcResult<()> {
+    pub fn styles_off(&mut self, stylebits: NcStyle) -> NcResult<()> {
         error![
             unsafe { crate::ncdirect_off_styles(self, stylebits.into()) },
             &format!("NcDirect.styles_off({:0X})", stylebits)
@@ -230,7 +245,7 @@ impl NcDirect {
     /// Adds the specified styles.
     ///
     /// *C style function: [ncdirect_on_styles()][crate::ncdirect_on_styles].*
-    pub fn styles_on(&mut self, stylebits: NcStyleMask) -> NcResult<()> {
+    pub fn styles_on(&mut self, stylebits: NcStyle) -> NcResult<()> {
         error![
             unsafe { crate::ncdirect_on_styles(self, stylebits.into()) },
             &format!("NcDirect.styles_on({:0X})", stylebits)
@@ -240,7 +255,7 @@ impl NcDirect {
     /// Sets just the specified styles.
     ///
     /// *C style function: [ncdirect_set_styles()][crate::ncdirect_set_styles].*
-    pub fn styles_set(&mut self, stylebits: NcStyleMask) -> NcResult<()> {
+    pub fn styles_set(&mut self, stylebits: NcStyle) -> NcResult<()> {
         error![
             unsafe { crate::ncdirect_set_styles(self, stylebits.into()) },
             &format!("NcDirect.styles_set({:0X})", stylebits)
@@ -270,6 +285,46 @@ impl NcDirect {
 
 /// ## NcDirect methods: capabilities, cursor, dimensions
 impl NcDirect {
+    /// Is there support for acquiring the cursor's current position?
+    ///
+    /// Requires the u7 terminfo capability, and that we are connected to an
+    /// actual terminal.
+    pub fn canget_cursor(&self) -> bool {
+        unsafe { crate::ncdirect_canget_cursor(self) }
+    }
+
+    /// Can we reliably use Unicode braille?
+    ///
+    /// *C style function: [ncdirect_canbraille()][crate::ncdirect_canbraille].*
+    pub fn canbraille(&self) -> bool {
+        crate::ncdirect_canbraille(self)
+    }
+
+    /// Can we set the "hardware" palette?
+    ///
+    /// Requires the "ccc" terminfo capability.
+    ///
+    /// *C style function: [ncdirect_canchangecolor()][crate::ncdirect_canchangecolor].*
+    pub fn canchangecolor(&self) -> bool {
+        crate::ncdirect_canchangecolor(self)
+    }
+
+    /// Can we fade?
+    ///
+    /// Requires either the "rgb" or "ccc" terminfo capability.
+    ///
+    /// *C style function: [ncdirect_canfade()][crate::ncdirect_canfade].*
+    pub fn canfade(&self) -> bool {
+        crate::ncdirect_canfade(self)
+    }
+
+    /// Can we reliably use Unicode halfblocks?
+    ///
+    /// *C style function: [ncdirect_canhalfblock()][crate::ncdirect_canhalfblock].*
+    pub fn canhalfblock(&self) -> bool {
+        crate::ncdirect_canhalfblock(self)
+    }
+
     /// Can we load images?
     ///
     /// Requires being built against FFmpeg/OIIO.
@@ -279,6 +334,36 @@ impl NcDirect {
         unsafe { crate::ncdirect_canopen_images(self) }
     }
 
+    /// Can we load videos?
+    ///
+    /// Requires being built against FFmpeg/OIIO.
+    ///
+    /// *C style function: [ncdirect_canopen_videos()][crate::ncdirect_canopen_videos].*
+    pub fn canopen_videos(&self) -> bool {
+        crate::ncdirect_canopen_videos(self)
+    }
+
+    /// Can we reliably use Unicode quadrants?
+    ///
+    /// *C style function: [ncdirect_canquadrant()][crate::ncdirect_canquadrant].*
+    pub fn canquadrant(&self) -> bool {
+        crate::ncdirect_canquadrant(self)
+    }
+
+    /// Can we reliably use Unicode sextants?
+    ///
+    /// *C style function: [ncdirect_cansextant()][crate::ncdirect_cansextant].*
+    pub fn cansextant(&self) -> bool {
+        crate::ncdirect_cansextant(self)
+    }
+
+    /// Can we directly specify RGB values per cell, or only use palettes?
+    ///
+    /// *C style function: [ncdirect_cantruecolor()][crate::ncdirect_cantruecolor].*
+    pub fn cantruecolor(&self) -> bool {
+        crate::ncdirect_cantruecolor(self)
+    }
+
     /// Is our encoding UTF-8?
     ///
     /// Requires LANG being set to a UTF8 locale.
@@ -286,6 +371,13 @@ impl NcDirect {
     /// *C style function: [ncdirect_canutf8()][crate::ncdirect_canutf8].*
     pub fn canutf8(&self) -> bool {
         unsafe { crate::ncdirect_canutf8(self) }
+    }
+
+    /// Returns the [`NcCapabilities`].
+    ///
+    /// *C style function: [ncdirect_capabilities()][crate::ncdirect_capabilities].*
+    pub fn capabilities(&self) -> NcCapabilities {
+        crate::ncdirect_capabilities(self)
     }
 
     /// Checks for pixel support.
@@ -298,7 +390,7 @@ impl NcDirect {
     ///
     /// *C style function: [ncdirect_check_pixel_support()][crate::ncdirect_check-pixel_support].*
     #[allow(clippy::wildcard_in_or_patterns)]
-    pub fn check_pixel_support(&mut self) -> NcResult<bool> {
+    pub fn check_pixel_support(&self) -> NcResult<bool> {
         let res = unsafe { crate::ncdirect_check_pixel_support(self) };
         match res {
             0 => Ok(false),
@@ -327,68 +419,68 @@ impl NcDirect {
         ]
     }
 
-    /// Moves the cursor down, `num` rows.
+    /// Moves the cursor down any number of rows.
     ///
     /// *C style function: [ncdirect_cursor_down()][crate::ncdirect_cursor_down].*
-    pub fn cursor_down(&mut self, num: NcDim) -> NcResult<()> {
+    pub fn cursor_down(&mut self, rows: NcOffset) -> NcResult<()> {
         error![
-            unsafe { crate::ncdirect_cursor_down(self, num as i32) },
-            &format!("NcDirect.cursor_down({})", num)
+            unsafe { crate::ncdirect_cursor_down(self, rows as i32) },
+            &format!("NcDirect.cursor_down({})", rows)
         ]
     }
 
-    /// Moves the cursor left, `num` columns.
+    /// Moves the cursor left any number of columns.
     ///
     /// *C style function: [ncdirect_cursor_left()][crate::ncdirect_cursor_left].*
-    pub fn cursor_left(&mut self, num: NcDim) -> NcResult<()> {
+    pub fn cursor_left(&mut self, cols: NcOffset) -> NcResult<()> {
         error![
-            unsafe { crate::ncdirect_cursor_left(self, num as i32) },
-            &format!("NcDirect.cursor_left({})", num)
+            unsafe { crate::ncdirect_cursor_left(self, cols as i32) },
+            &format!("NcDirect.cursor_left({})", cols)
         ]
     }
 
-    /// Moves the cursor right, `num` columns.
+    /// Moves the cursor right any number of columns.
     ///
     /// *C style function: [ncdirect_cursor_right()][crate::ncdirect_cursor_right].*
-    pub fn cursor_right(&mut self, num: NcDim) -> NcResult<()> {
+    pub fn cursor_right(&mut self, cols: NcOffset) -> NcResult<()> {
         error![
-            unsafe { crate::ncdirect_cursor_right(self, num as i32) },
-            &format!("NcDirect.cursor_right({})", num)
+            unsafe { crate::ncdirect_cursor_right(self, cols as i32) },
+            &format!("NcDirect.cursor_right({})", cols)
         ]
     }
 
-    /// Moves the cursor up, `num` rows.
+    /// Moves the cursor up any number of rows.
     ///
     /// *C style function: [ncdirect_cursor_up()][crate::ncdirect_cursor_up].*
-    pub fn cursor_up(&mut self, num: NcDim) -> NcResult<()> {
+    pub fn cursor_up(&mut self, rows: NcOffset) -> NcResult<()> {
         error![
-            unsafe { crate::ncdirect_cursor_up(self, num as i32) },
-            &format!("NcDirect.cursor_up({})", num)
+            unsafe { crate::ncdirect_cursor_up(self, rows as i32) },
+            &format!("NcDirect.cursor_up({})", rows)
         ]
     }
 
-    /// Moves the cursor in direct mode to the specified row, column.
+    /// Sets the cursor to the specified row `y`, column `x`.
     ///
     /// *C style function: [ncdirect_cursor_move_yx()][crate::ncdirect_cursor_move_yx].*
-    pub fn cursor_move_yx(&mut self, y: NcDim, x: NcDim) -> NcResult<()> {
+    pub fn cursor_set_yx(&mut self, y: NcDim, x: NcDim) -> NcResult<()> {
         error![unsafe { crate::ncdirect_cursor_move_yx(self, y as i32, x as i32) }]
     }
 
-    /// Moves the cursor in direct mode to the specified row.
+    /// Sets the cursor to the specified row `y`.
     ///
     /// *(No equivalent C style function)*
-    pub fn cursor_move_y(&mut self, y: NcDim) -> NcResult<()> {
+    pub fn cursor_set_y(&mut self, y: NcDim) -> NcResult<()> {
         error![unsafe { crate::ncdirect_cursor_move_yx(self, y as i32, -1) }]
     }
 
-    /// Moves the cursor in direct mode to the specified column.
+    /// Sets the cursor to the specified column `x`.
     ///
     /// *(No equivalent C style function)*
-    pub fn cursor_move_x(&mut self, x: NcDim) -> NcResult<()> {
+    pub fn cursor_set_x(&mut self, x: NcDim) -> NcResult<()> {
         error![unsafe { crate::ncdirect_cursor_move_yx(self, -1, x as i32) }]
     }
 
-    /// Gets the cursor position, when supported.
+    /// Gets the cursor (y, x) position, when supported.
     ///
     /// This requires writing to the terminal, and then reading from it.
     /// If the terminal doesn't reply, or doesn't reply in a way we understand,
@@ -425,24 +517,31 @@ impl NcDirect {
     /// Gets the current number of rows.
     ///
     /// *C style function: [ncdirect_dim_y()][crate::ncdirect_dim_y].*
-    pub fn dim_y(&self) -> NcDim {
+    pub fn dim_y(&mut self) -> NcDim {
         unsafe { crate::ncdirect_dim_y(self) as NcDim }
     }
 
     /// Gets the current number of columns.
     ///
     /// *C style function: [ncdirect_dim_x()][crate::ncdirect_dim_x].*
-    pub fn dim_x(&self) -> NcDim {
+    pub fn dim_x(&mut self) -> NcDim {
         unsafe { crate::ncdirect_dim_x(self) as NcDim }
     }
 
     /// Gets the current number of rows and columns.
     ///
     /// *C style function: [ncdirect_dim_y()][crate::ncdirect_dim_y].*
-    pub fn dim_yx(&self) -> (NcDim, NcDim) {
+    pub fn dim_yx(&mut self) -> (NcDim, NcDim) {
         let y = unsafe { crate::ncdirect_dim_y(self) as NcDim };
         let x = unsafe { crate::ncdirect_dim_x(self) as NcDim };
         (y, x)
+    }
+
+    /// Returns the name of the detected terminal.
+    ///
+    /// *C style function: [ncdirect_detected_terminal()][crate::ncdirect_detected_terminal].*
+    pub fn detected_terminal(&self) -> String {
+        rstring![crate::ncdirect_detected_terminal(self)].to_string()
     }
 }
 
@@ -456,32 +555,15 @@ impl NcDirect {
     /// Provide a None `time` to block at length, a `time` of 0 for non-blocking
     /// operation, and otherwise a timespec to bound blocking.
     ///
-    /// Signals in sigmask (less several we handle internally) will be atomically
-    /// masked and unmasked per [ppoll(2)](https://linux.die.net/man/2/ppoll).
-    ///
-    /// `*sigmask` should generally contain all signals.
-    ///
     /// *C style function: [ncdirect_getc()][crate::ncdirect_getc].*
     //
     // CHECK returns 0 on a timeout.
-    pub fn getc(
-        &mut self,
-        time: Option<NcTime>,
-        sigmask: Option<&mut sigset_t>,
-        input: Option<&mut NcInput>,
-    ) -> NcResult<char> {
+    pub fn getc(&mut self, time: Option<NcTime>, input: Option<&mut NcInput>) -> NcResult<char> {
         let ntime;
         if let Some(time) = time {
             ntime = &time as *const _;
         } else {
             ntime = null();
-        }
-
-        let nsigmask;
-        if let Some(sigmask) = sigmask {
-            nsigmask = sigmask as *mut _;
-        } else {
-            nsigmask = null_mut() as *mut _;
         }
         let ninput;
         if let Some(input) = input {
@@ -490,7 +572,7 @@ impl NcDirect {
             ninput = null_mut();
         }
         let c = unsafe {
-            core::char::from_u32_unchecked(crate::ncdirect_getc(self, ntime, nsigmask, ninput))
+            core::char::from_u32_unchecked(crate::ncdirect_getc(self, ntime, null_mut(), ninput))
         };
         if c as u32 as i32 == NCRESULT_ERR {
             return Err(NcError::new());
@@ -533,7 +615,7 @@ impl NcDirect {
     /// are both marked as using the default color.
     ///
     /// *C style function: [ncdirect_putstr()][crate::ncdirect_putstr].*
-    pub fn putstr(&mut self, channels: NcChannelPair, string: &str) -> NcResult<()> {
+    pub fn putstr(&mut self, channels: NcChannels, string: &str) -> NcResult<()> {
         error![
             unsafe { crate::ncdirect_putstr(self, channels, cstring![string]) },
             &format!("NcDirect.putstr({:0X}, {:?})", channels, string)
@@ -564,7 +646,7 @@ impl NcDirect {
     /// Draws a box with its upper-left corner at the current cursor position,
     /// having dimensions `ylen` * `xlen`.
     ///
-    /// See NcPlane.[box()][crate::NcPlane#method.box] for more information.
+    /// See NcPlane.[box()][NcPlane#method.box] for more information.
     ///
     /// The minimum box size is 2x2, and it cannot be drawn off-screen.
     ///
@@ -574,10 +656,10 @@ impl NcDirect {
     // TODO: CHECK, specially wchars.
     pub fn r#box(
         &mut self,
-        ul: NcChannelPair,
-        ur: NcChannelPair,
-        ll: NcChannelPair,
-        lr: NcChannelPair,
+        ul: NcChannels,
+        ur: NcChannels,
+        ll: NcChannels,
+        lr: NcChannels,
         wchars: &[char; 6],
         y_len: NcDim,
         x_len: NcDim,
@@ -610,10 +692,10 @@ impl NcDirect {
     /// *C style function: [ncdirect_double_box()][crate::ncdirect_double_box].*
     pub fn double_box(
         &mut self,
-        ul: NcChannelPair,
-        ur: NcChannelPair,
-        ll: NcChannelPair,
-        lr: NcChannelPair,
+        ul: NcChannels,
+        ur: NcChannels,
+        ll: NcChannels,
+        lr: NcChannels,
         y_len: NcDim,
         x_len: NcDim,
         ctlword: u32,
@@ -628,10 +710,10 @@ impl NcDirect {
     /// *C style function: [ncdirect_rounded_box()][crate::ncdirect_rounded_box].*
     pub fn rounded_box(
         &mut self,
-        ul: NcChannelPair,
-        ur: NcChannelPair,
-        ll: NcChannelPair,
-        lr: NcChannelPair,
+        ul: NcChannels,
+        ur: NcChannels,
+        ll: NcChannels,
+        lr: NcChannels,
         y_len: NcDim,
         x_len: NcDim,
         ctlword: u32,
@@ -640,12 +722,13 @@ impl NcDirect {
             crate::ncdirect_rounded_box(self, ul, ur, ll, lr, y_len as i32, x_len as i32, ctlword)
         }]
     }
-    /// Draws horizontal lines using the specified [NcChannelPair]s, interpolating
+
+    /// Draws horizontal lines using the specified [NcChannels]s, interpolating
     /// between them as we go.
     ///
     /// All lines start at the current cursor position.
     ///
-    /// The [NcEgc] at `egc` may not use more than one column.
+    /// The string at `egc` may not use more than one column.
     ///
     /// For a horizontal line, `len` cannot exceed the screen width minus the
     /// cursor's offset.
@@ -654,26 +737,20 @@ impl NcDirect {
     #[inline]
     pub fn hline_interp(
         &mut self,
-        egc: &NcEgc,
+        egc: &str,
         len: NcDim,
-        h1: NcChannelPair,
-        h2: NcChannelPair,
+        h1: NcChannels,
+        h2: NcChannels,
     ) -> NcResult<()> {
-        // https://github.com/dankamongmen/notcurses/issues/1339
-        #[cfg(any(target_arch = "x86_64", target_arch = "i686"))]
-        let egc_ptr = &(*egc as i8);
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "i686")))]
-        let egc_ptr = &(*egc as u8);
-
-        error![unsafe { crate::ncdirect_hline_interp(self, egc_ptr, len as i32, h1, h2) }]
+        error![crate::ncdirect_hline_interp(self, egc, len, h1, h2)]
     }
 
-    /// Draws horizontal lines using the specified [NcChannelPair]s, interpolating
+    /// Draws horizontal lines using the specified [NcChannels]s, interpolating
     /// between them as we go.
     ///
     /// All lines start at the current cursor position.
     ///
-    /// The [NcEgc] at `egc` may not use more than one column.
+    /// The string at `egc` may not use more than one column.
     ///
     /// For a vertical line, `len` may be as long as you'd like; the screen
     /// will scroll as necessary.
@@ -682,17 +759,11 @@ impl NcDirect {
     #[inline]
     pub fn vline_interp(
         &mut self,
-        egc: &NcEgc,
+        egc: &str,
         len: NcDim,
-        h1: NcChannelPair,
-        h2: NcChannelPair,
+        h1: NcChannels,
+        h2: NcChannels,
     ) -> NcResult<()> {
-        // https://github.com/dankamongmen/notcurses/issues/1339
-        #[cfg(any(target_arch = "x86_64", target_arch = "i686"))]
-        let egc_ptr = &(*egc as i8);
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "i686")))]
-        let egc_ptr = &(*egc as u8);
-
-        error![unsafe { crate::ncdirect_vline_interp(self, egc_ptr, len as i32, h1, h2) }]
+        error![crate::ncdirect_vline_interp(self, egc, len, h1, h2)]
     }
 }

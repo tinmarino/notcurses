@@ -67,9 +67,11 @@ int drop_signals(void* nc){
   }
   pthread_mutex_unlock(&lock);
   if(ret){
-    fprintf(stderr, "Couldn't drop signals with %p (had %p)\n", nc, expected);
+    fprintf(stderr, "Signals weren't registered for %p (had %p)\n", nc, expected);
   }
-  return ret;
+  // we might not have established any handlers in setup_signals(); always
+  // return 0 here, for now...
+  return 0;
 }
 
 static void
@@ -100,14 +102,18 @@ fatal_handler(int signo, siginfo_t* siginfo, void* v){
   }
 }
 
+// this both sets up our signal handlers (unless that behavior has been
+// inhibited), and ensures that only one notcurses/ncdirect context is active
+// at any given time.
 int setup_signals(void* vnc, bool no_quit_sigs, bool no_winch_sig,
                   int(*handler)(void*)){
   notcurses* nc = vnc;
   void* expected = NULL;
   struct sigaction sa;
+  // don't register ourselves if we don't intend to set up signal handlers
   // we expect NULL (nothing registered), and want to register nc
   if(!atomic_compare_exchange_strong(&signal_nc, &expected, nc)){
-    loginfo(nc, "%p is already registered for signals (provided %p)\n", expected, nc);
+    loginfo("%p is already registered for signals (provided %p)\n", expected, nc);
     return -1;
   }
   if(!no_winch_sig){

@@ -1,7 +1,123 @@
 This document attempts to list user-visible changes and any major internal
 rearrangements of Notcurses.
 
-* 2.3.1 (not yet released)
+* 2.3.7 (2021-06-29)
+  * Deprecated `NCSTYLE_REVERSE` and `NCSTYLE_DIM`. The remainder are safe,
+    and I added back `NCSTYLE_BLINK` according to popular demand.
+  * Added `NCOPTION_PRESERVE_CURSOR`. If used, the standard plane's virtual
+    cursor will be initialized to match its position at startup, rather than
+    starting in the upper-left corner. Together with a scrolling standard
+    plane and inhibition of the alternate screen, this allows rendered mode
+    to easily be used for scrolling shell environment programs.
+  * Control characters from C0 and C1 are now rejected when loading `nccell`s
+    or writing to a plane (except for newline, when using a scrolling plane).
+    This was always intended, but never enforced. Horizontal tabs might be
+    enabled anew sometime in the future.
+  * `ncls` now defaults to `NCBLIT_PIXEL`.
+  * Added `ncplane_scrolling_p()` to retrieve a plane's scrolling status.
+  * Greatly expanded `notcurses-info`.
+
+* 2.3.6 (2021-06-23)
+  * Fixed (harmless) warning with `-Wformat-security`.
+  * Remove `NCSTYLE_{INVIS,BLINK,STANDOUT}` with extreme prejudice. They
+    remain defined for now, but will be removed for ABI3.
+  * Deprecated `notcurses_debug_caps()`, which no longer generates output.
+    Hey, I explicitly commented that its output was "subject to change".
+
+* 2.3.5 (2021-06-23)
+  * Happy day! The terminal interrogation routines in the initialization code 
+    have been completely revamped. The first outcome of this is that Sixel
+    parameters are now opportunistically read at startup, and thus there is
+    no longer any need to call `notcurses_check_pixel_support()` before
+    using `NCBLIT_PIXEL`. If it's there, it'll be used; if not, it'll degrade
+    or fail. The new routines rely on the terminal answering the Send Device
+    Attributes escape; if it does not, Notcurses may refuse to start, or even
+    hang. Please report a bug if you run into this.
+    It is still necessary to supply a correct `TERM` environment variable,
+    because this is used to index into the `terminfo(5)` database, which
+    seeds most common escapes. The extended capabilities of some modern
+    terminals, however, will be retrieved independently of `TERM`; they'll
+    be made available for use if supported by the connected terminal, and
+    others will not, even if your `TERM` variable implies they ought.
+  * `ncplane_as_rgba()`/`ncvisual_from_plane()` now support `NCBLIT_BRAILLE`.
+  * `CELL_ALPHA_*` macros are now `NCALPHA_*`. The former will remain
+    `#define`d until ABI3.
+  * Filled out the complete set of `ncdirect_can*()` capability functions,
+    which now match the `notcurses_can*()` API. Added
+    `ncdirect_canget_cursor()` to check if the cursor can be located.
+  * `ncdirect_dim_y()` and `ncdirect_dim_x()` no longer accept a
+    `const ncdirect*`, since they update the term parameters. Sorry!
+  * Added `NCDIRECT_OPTION_VERBOSE` and `NCDIRECT_OPTION_VERY_VERBOSE`.
+    They map to `NCLOGLEVEL_WARNING` and `NCLOGLEVEL_TRACE`, respectively.
+  * New functions `ncvisual_from_rgb_packed()` and `ncvisual_from_rgb_loose()`.
+  * New stat `sprixelbytes`.
+  * Added new functions `ncpile_render_to_buffer()` and
+    `ncpile_render_to_file()`. Rewrote `notcurses_render_to_buffer()` and
+    `notcurses_render_to_file()` as trivial wrappers around these functions,
+    and deprecated the latter. They will be removed in ABI3.
+  * Added support for application-synchronized updates, and a new stat.
+
+* 2.3.4 (2021-06-12)
+  * Added the flag `NCVISUAL_OPTION_NOINTERPOLATE` to use non-interpolative
+    scaling in `ncvisual_render()`. `ncvisual_render()` without a multimedia
+    engine will now use this method for any requested scaling (previously,
+    scaling was not performed without a linked multimedia backend).
+  * `NCVISUAL_OPTION_BLEND` used with `NCBLIT_PIXEL` will now, when the Kitty
+    graphics protocol is in use, cut the alpha of each pixel in half.
+  * `ncvisual_inflate()` has been rewritten as a wrapper around the new
+    function `ncvisual_resize_noninterpolative()`, and deprecated. It will be
+    removed for ABI3. Godspeed, `ncvisual_inflate()`; we hardly knew ye.
+  * `ncdirectf_render()` has been changed to accept a `ncvisual_options`,
+    replacing and extending its four final arguments. Sorry about the breakage
+    here, but `ncdirectf_render()` was introduced pretty recently (2.3.1).
+    As a result, `ncdirectf_render()` and `ncdirect_stream()` now honor
+    `NCVISUAL_OPTION_BLEND` and `NCVISUAL_OPTION_NOINTERPOLATE`. All of this
+    also applies to `ncdirect_geomf()`.
+  * `ncplayer` now accepts `-n` to force non-interpolative scaling.
+  * A new binary is installed, `notcurses-info`. It prints information about
+    the terminal environment in which it runs. More information is available
+    from its man page, `notcurses-info(1)`.
+  * Added `ncdirect_light_box()`, `ncdirect_heavy_box()`,
+    `ncdirect_ascii_box()`, `nccells_light_box()`, and `nccells_heavy_box()`.
+    Publicized `nccells_ascii_box()`. All are `static inline`.
+  * A bug was fixed in `ncplane_move_yx()`: root planes were being moved
+    relatively instead of absolutely. This was never the intended behavior.
+  * It used to be possible to pass `NULL` as the second parameter of
+    `ncplane_mergedown_simple()`, and have the standard plane be used as
+    the destination. This is no longer supported, since the source plane
+    could be in another pile. An error will instead be returned.
+  * Fixed a bug in `ncdirect_box()` where default/palette-indexed colors
+    weren't properly used on the top and bottom borders.
+  * Added `notcurses_detected_terminal()` and `ncdirect_detected_terminal()`.
+
+* 2.3.2 (2021-06-03)
+  * Fixed a bug affecting certain scalings of `ncvisual` objects created from
+    memory (e.g. `ncvisual_from_rgba()`).
+  * Fixed a bug where setting a style in direct mode reset color. Shocked that
+    such a bug could exist for so long, ugh.
+  * Fixed memory leaks in the `ffmpeg` and `none` implementations of the
+    `ncvisual` API, and also the `libnotcurses-core` implementation.
+  * `ncinput_nomod_p()` has been added. This function returns `true` if and
+    only if its `ncinput` argument has no modifiers active.
+  * Added `notcurses_cursor_yx()` to get the current location of the cursor.
+  * Added `ncdirect_supported_styles()`.
+  * `ncplane_at_yx()` now properly integrates the plane's base cell when
+    appropriate, and thus represents the cell as it will be used during
+    rendering. This change cascades, affecting e.g. `ncplane_contents()`.
+  * `ncplane_at_yx()` now returns the EGC when called on any column of a
+    wide glyph. `ncplane_at_yx_cell()` continues to duplicate the exact
+    `nccell`, and can thus continue to be used to distinguish between primary
+    and secondary columns of a wide glyph. Likewise, `notcurses_at_yx()`
+    now returns the EGC when called on any column of a wide glyph.
+  * Sadly, `ncplane_contents()` no longer accepts a `const ncplane*`, since it
+    might write temporaries to the plane's EGCpool during operation.
+  * Added `ncdirect_styles()`, to retrieve the current styling.
+  * In previous versions of Notcurses, a rendered-mode context
+    (`struct notcurses`) and a direct-mode context (`struct ncdirect`) could
+    be open at the same time. This was never intended, and is no longer
+    possible.
+
+* 2.3.1 (2021-05-18)
   * Sprixels no longer interact with their associated plane's framebuffer. This
     means plane contents are maintainted across blitting a sprixel and then
     independently destroying that sprixel (i.e. without destroying the plane).
@@ -12,7 +128,19 @@ rearrangements of Notcurses.
   * 8bpc RGB is unconditionally enabled if the terminal emulator is determined
     to be Kitty, Alacritty, or foot; there is no longer any need to export
     `COLORTERM` on these terminals.
-  * Add `NCSCALE_INFLATE`.
+  * Fixed bad bug in `ncvisual_resize()` when growing an image. This isn't
+    relevant to enlarging an `ncvisual` via scaling, but only when persistently
+    growing one with `ncvisual_resize()`.
+  * Direct mode image rendering now honors the `maxy` and `maxx` parameters,
+    which specify the maximum number of cell rows and columns, respectively,
+    to use for the render. They were previously ignored, contrary to
+    documentation. It is now an error to pass a negative number for either of
+    these values. Use 0 to specify "as much space as is necessary".
+  * Added `ncdirectf_from_file()`, `ncdirectf_geom()`, and `ncdirectf_render()`,
+    with the net result that you can now (efficiently) get media geometry in
+    direct mode. If you don't care about media geometry, you can keep using
+    `ncdirect_render_frame()` and/or `ncdirect_render_image()`, and Godspeed.
+    Oh yes, and `ncdirectf_free()`. Rien n'est simple, mais tout est facile....
 
 * 2.3.0 (2021-05-09) **"Triumph"**
   * No user-visible changes.

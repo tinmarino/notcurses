@@ -44,8 +44,8 @@ wipebitmap(struct notcurses* nc){
     }
   }
   uint64_t channels = 0;
-  ncchannels_set_bg_alpha(&channels, CELL_ALPHA_TRANSPARENT);
-  ncchannels_set_fg_alpha(&channels, CELL_ALPHA_TRANSPARENT);
+  ncchannels_set_bg_alpha(&channels, NCALPHA_TRANSPARENT);
+  ncchannels_set_fg_alpha(&channels, NCALPHA_TRANSPARENT);
   ncplane_set_base(notcurses_stdplane(nc), "", 0, channels);
   ncplane_move_top(notcurses_stdplane(nc));
   emit(notcurses_stdplane(nc), "Ought see 16 *s");
@@ -154,6 +154,7 @@ int main(void){
     notcurses_stop(nc);
     return EXIT_FAILURE;
   }
+  fprintf(stderr, "               stderr ought be redirected\n");
   int r = wipebitmap(nc);
   r |= notcurses_stop(nc);
   return r;

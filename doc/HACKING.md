@@ -193,7 +193,7 @@ there is no resize step between rasterizing and writing, writing deals with
 the same geometries as rasterization, so we ignore it.
 
 Rasterization can be split into two virtual phases: *postpaint* and *rastering*.
-*postpaint* corrects for `CELL_ALPHA_HIGHCONTRAST`, performs damage detection,
+*postpaint* corrects for `NCALPHA_HIGHCONTRAST`, performs damage detection,
 and copies any necessary EGCs from their source pools to the common pool
 (copying these EGCs is why a pile cannot be modified between rendering and
 rasterizing--such modifications might invalidate the EGC references). The
@@ -349,8 +349,6 @@ due to Sixel requirements. `outputx` will currently always equal `scaledx`.
 the relationship of `inputy`/`inputx` to `scaledy`/`scaledx` is as follows:
 
 * `NCSCALE_NONE`: equal
-* `NCSCALE_INFLATE`: `scaledy` = `inputy` * *N*, `scaledx` = `inputx` * *N*,
-  where *N* is an integer.
 * `NCSCALE_SCALE`: `scaledy` = `inputy` * *F*, `scaledx` = `inputx` * *F*, where
   *F* is a float, and at least one of `outputy` and `outputx` maximize the
   space within the target plane relative to mandatory scaling.
@@ -368,3 +366,50 @@ be a multiple of six pixels tall.
 * always starts at the origin of its plane
 * admits no other output to its plane, nor resizing
 * greatly complicates rendering
+
+## Input
+
+Input is greatly complicated by rare but critical in-band signaling from the
+terminal itself. This is the method by which, for instance, terminals
+advertising Sixel indicate how many color registers they support. We must
+ensure such responses never reach the user, and that we act on them quickly.
+Such replies are generally distinguished by a (literal) escape. Unfortunately,
+the user can (and often does) generate ESC themselves.
+
+The primary instance of this signaling is on startup, when we query the
+terminal as part of capability discovery. Until we process the reply, we
+don't know what capabilities the terminal offers, particularly with regard
+to bitmap graphics.
+
+We have two potential input sources, both of which *might* correspond to
+`stdin`. If we were spawned attached to the terminal, we receive both user and
+terminal input on the same fd (corresponding to `stdin`). If our input was
+redirected from somewhere else, we need open the controlling terminal, and
+read from it. This has the happy side-effect of isolating the control plane
+from the data plane (though you mustn't rely that this will make control
+communication unforgeable; the user can likely write to the controlling
+terminal themselves).
+
+If a terminal doesn't understand or implement some query, there will typically
+be no response. If a negative response is required, follow up the query (or
+queries) with a Device Attributes (DA, `\e[c`) query, to which all known terminals
+will respond. So long as a valid response cannot be confused with a response to
+DA, this serves as a negative acknowledgement. Relying on this, at startup we
+fire off two `XTSMGRAPHICS` queries followed by a DA query, all as one write. We
+don't sit around waiting for the response, but instead continue initialization.
+Ideally, by the time we're done and need the info, it's ready for us to read.
+
+Some inputs intended for the user are transmitted to us as escapes, however.
+Any of the synthesized characters (including e.g. Home, function keys, arrows)
+arrive as escapes, which we convert to codepoints in the Private Use Area.
+These need be delivered to the user.
+
+There are no asynchronous control messages that we need watch for (the closest
+thing is `SIGWINCH` on geometry changes), so we don't generally need to watch
+the input. We *do* need to extract any control messages that arrive while the
+user is reading input (when `stdin` is connected to the tty, anyway).
+Similarly, were we reading, we'd need put aside any input intended for the
+user. We thus keep two queues at all times: received control messages, and
+received user input. The received user input is non-segmented UTF-8 (i.e.
+translated from control sequences). The received control information is stored
+as distinct multibyte escape sequences.

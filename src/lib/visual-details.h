@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -29,6 +30,7 @@ typedef struct ncvisual {
 
 static inline void
 ncvisual_set_data(ncvisual* ncv, void* data, bool owned){
+//fprintf(stderr, "replacing %p with %p (%u -> %u)\n", ncv->data, data, ncv->owndata, owned);
   if(ncv->owndata){
     if(data != ncv->data){
       free(ncv->data);

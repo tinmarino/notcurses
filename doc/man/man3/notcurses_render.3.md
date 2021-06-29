@@ -1,6 +1,6 @@
 % notcurses_render(3)
 % nick black <nickblack@linux.com>
-% v2.3.0
+% v2.3.7
 
 # NAME
 
@@ -18,9 +18,9 @@ notcurses_render - sync the physical display to a virtual pile
 
 **char* notcurses_at_yx(struct notcurses* ***nc***, int ***yoff***, int ***xoff***, uint16_t* ***styles***, uint64_t* ***channels***);**
 
-**int notcurses_render_to_file(struct notcurses* ***nc***, FILE* ***fp***);**
+**int ncpile_render_to_file(struct ncplane* ***p***, FILE* ***fp***);**
 
-**int notcurses_render_to_buffer(struct notcurses* ***nc***, char\*\* ***buf***, size_t* ***buflen***);**
+**int ncpile_render_to_buffer(struct ncplane* ***p***, char\*\* ***buf***, size_t* ***buflen***);**
 
 # DESCRIPTION
 
@@ -36,10 +36,9 @@ is a part. The output is maintained internally; calling **ncpile_render** again
 on the same pile will replace this state with a fresh render. Multiple piles
 can be concurrently rendered. **ncpile_rasterize** performs rasterization, and
 writes the result to the terminal. It is a blocking call, and only one
-rasterization operation may proceed at a time. It does not destroy the
-render output, and can be called multiple times on the same render.
-**notcurses_render** calls **ncpile_render** and **ncpile_rasterize** on the
-standard plane, for backwards compatibility. It is an exclusive blocking call.
+rasterization operation may proceed at a time. **notcurses_render** calls
+**ncpile_render** and **ncpile_rasterize** on the standard plane, for backwards
+compatibility. It is an exclusive blocking call.
 
 It is necessary to call **ncpile_rasterize** or **notcurses_render** to
 generate any visible output; the various notcurses_output(3) calls only draw to
@@ -51,11 +50,11 @@ While **notcurses_render** is called, you **must not call any other functions
 modifying the same pile**. Other piles may be freely accessed and modified.
 The pile being rendered may be accessed, but not modified.
 
-**notcurses_render_to_buffer** performs the render and raster processes of
-**notcurses_render**, but does not write the resulting buffer to the
-terminal. The user is responsible for writing the buffer to the terminal in
-its entirety. If there is an error, subsequent frames will be out of sync,
-and **notcurses_refresh(3)** must be called.
+**ncpile_render_to_buffer** performs the render and raster processes of
+**ncpile_render** and **ncpile_rasterize**, but does not write the resulting
+buffer to the terminal. The user is responsible for writing the buffer to the
+terminal in its entirety. If there is an error, subsequent frames will be out
+of sync, and **notcurses_refresh(3)** must be called.
 
 A render operation consists of two logical phases: generation of the rendered
 scene, and blitting this scene to the terminal (these two phases might actually
@@ -86,15 +85,16 @@ At each plane **P**, we consider a cell **C**. This cell is the intersecting cel
 unless that cell has no EGC. In that case, **C** is the plane's default cell.
 
 * If we have not yet determined an EGC, and **C** has a non-zero EGC, use the EGC and style of **C**.
-* If we have not yet locked in a foreground color, and **C** is not foreground-transparent, use the foreground color of **C** (see [BUGS][] below). If **C** is **CELL_ALPHA_OPAQUE**, lock the color in.
-* If we have not yet locked in a background color, and **C** is not background-transparent, use the background color of **C** (see [BUGS][] below). If **C** is **CELL_ALPHA_OPAQUE**, lock the color in.
+* If we have not yet locked in a foreground color, and **C** is not foreground-transparent, use the foreground color of **C** (see [BUGS][] below). If **C** is **NCALPHA_OPAQUE**, lock the color in.
+* If we have not yet locked in a background color, and **C** is not background-transparent, use the background color of **C** (see [BUGS][] below). If **C** is **NCALPHA_OPAQUE**, lock the color in.
 
 If the algorithm concludes without an EGC, the cell is rendered with no glyph
 and a default background. If the algorithm concludes without a color locked in,
 the color as computed thus far is used.
 
-**notcurses_at_yx** retrieves a call *as rendered*. The EGC in that cell is
-copied and returned; it must be **free(3)**d by the caller.
+**notcurses_at_yx** retrieves a cell *as rendered*. The EGC in that cell is
+copied and returned; it must be **free(3)**d by the caller. If the cell is a
+secondary column of a wide glyph, the glyph is still returned.
 
 # RETURN VALUES
 

@@ -62,9 +62,7 @@ rotate_visual(struct notcurses* nc, struct ncplane* n, int dy, int dx){
     fromx = (dx - dy * 2) / 2;
     dx = dy * 2;
   }
-//fprintf(stderr, "ASK %d/%d @ %d/%d: %p\n", dy, dx, fromy, fromx);
-  struct ncvisual* ncv = ncvisual_from_plane(n, NCBLIT_DEFAULT, fromy, fromx, dy, dx);
-//fprintf(stderr, "%d/%d @ %d/%d: %p\n", dy, dx, fromy, fromx, ncv);
+  struct ncvisual* ncv = ncvisual_from_plane(n, NCBLIT_2x1, fromy, fromx, dy, dx);
   if(!ncv){
     ncvisual_destroy(ncv);
     return -1;
@@ -150,6 +148,9 @@ offset(uint32_t* rgba, int y, int x, int dx){
 
 // make a pixel array out from the center, blitting it as we go
 int normal_demo(struct notcurses* nc){
+  if(!notcurses_canutf8(nc)){
+    return 0;
+  }
   int dy, dx;
   int r = -1;
   struct ncplane* nstd = notcurses_stddim_yx(nc, &dy, &dx);

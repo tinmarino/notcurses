@@ -5,8 +5,11 @@
 //! The current module publicly re-exports bindgen generated structs, functions,
 //! and constants, for their direct usage.
 
-// [clippy & bindgen](https://github.com/rust-lang/rust-bindgen/issues/1470)
+// BUG ISSUES:
+// https://github.com/rust-lang/rust-bindgen/issues/1470
 #[allow(clippy::all)]
+// https://github.com/rust-lang/rust-bindgen/issues/1651
+#[allow(unknown_lints, deref_nullptr)]
 pub mod ffi {
     //! Rust FFI bindings, automatically generated with bindgen.
     //!
@@ -30,7 +33,7 @@ pub use ffi::{
 // already wrapped:
 //
 // // structs
-// blitset
+// blitset,
 
 // cell ------------------------------------------------------------------------
 //
@@ -40,10 +43,10 @@ pub use ffi::{
 // cell,
 //
 // // constants
-// CELL_ALPHA_BLEND,
-// CELL_ALPHA_HIGHCONTRAST,
-// CELL_ALPHA_OPAQUE,
-// CELL_ALPHA_TRANSPARENT,
+// NCALPHA_BLEND,
+// NCALPHA_HIGHCONTRAST,
+// NCALPHA_OPAQUE,
+// NCALPHA_TRANSPARENT,
 // CELL_BGDEFAULT_MASK,
 // CELL_BG_ALPHA_MASK,
 // CELL_BG_PALETTE,
@@ -60,6 +63,7 @@ pub use ffi::{
     nccell_extended_gcluster,
     nccell_load,
     nccell_release,
+    nccell_width,
     nccells_double_box,
     nccells_rounded_box,
 };
@@ -69,7 +73,7 @@ pub use ffi::{
 // already wrapped:
 //
 // // constants
-// CHANNEL_ALPHA_MASK
+// CHANNEL_ALPHA_MASK,
 
 // ncalign ---------------------------------------------------------------------
 //
@@ -102,6 +106,15 @@ pub use ffi::{
 // ncblitter_e_NCBLIT_DEFAULT,
 // ncblitter_e_NCBLIT_PIXEL,
 
+#[doc(inline)]
+pub use ffi::{
+    ncblit_bgrx,
+    ncblit_rgb_loose,
+    ncblit_rgb_packed,
+    // functions
+    ncblit_rgba,
+};
+
 // ncbox -----------------------------------------------------------------------
 
 // // constants
@@ -116,6 +129,16 @@ pub use ffi::{
 // NCBOXMASK_RIGHT,
 // NCBOXMASK_TOP,
 
+// nccapabilit* ----------------------------------------------------------------
+//
+// already wrapped:
+//
+// // structs
+// nccapabilities,
+//
+// // functions
+// nccapability_canchangecolor,
+
 // ncdirect --------------------------------------------------------------------
 //
 // already wrapped:
@@ -123,15 +146,30 @@ pub use ffi::{
 // // structs
 // ncdirect,
 //
+// // functions
+// ncdirect_canbraille,
+// ncdirect_canopen_videos
+// ncdirect_canchangecolor,
+// ncdirect_canfade,
+// ncdirect_canhalfblock,
+// ncdirect_canquadrant,
+// ncdirect_cantruecolor,
+// ncdirect_capabilities,
+// ncdirect_hline_interp,
+// ncdirect_vline_interp,
+//
 // // constants
 // NCDIRECT_OPTION_INHIBIT_CBREAK,
 // NCDIRECT_OPTION_INHIBIT_SETLOCALE,
 // NCDIRECT_OPTION_NO_QUIT_SIGHANDLERS,
+// NCDIRECT_OPTION_VERBOSE
+// NCDIRECT_OPTION_VERY_VERBOSE
 
 #[doc(inline)]
 pub use ffi::{
     // functions
     ncdirect_box,
+    ncdirect_canget_cursor,
     ncdirect_canopen_images,
     ncdirect_canutf8,
     ncdirect_check_pixel_support,
@@ -147,12 +185,12 @@ pub use ffi::{
     ncdirect_cursor_right,
     ncdirect_cursor_up,
     ncdirect_cursor_yx,
+    ncdirect_detected_terminal,
     ncdirect_dim_x,
     ncdirect_dim_y,
     ncdirect_double_box,
     ncdirect_flush,
     ncdirect_getc,
-    ncdirect_hline_interp,
     ncdirect_init,
     ncdirect_inputready_fd,
     ncdirect_off_styles,
@@ -173,7 +211,26 @@ pub use ffi::{
     ncdirect_set_fg_rgb,
     ncdirect_set_styles,
     ncdirect_stop,
-    ncdirect_vline_interp,
+    ncdirect_stream,
+    ncdirect_styles,
+    ncdirect_supported_styles,
+};
+
+// ncdirectf --------------------------------------------------------------------
+//
+// already wrapped:
+//
+// // type alias
+// ncdirectf,
+//
+
+#[doc(inline)]
+pub use ffi::{
+    ncdirectf_free,
+    // functions
+    ncdirectf_from_file,
+    ncdirectf_geom,
+    ncdirectf_render,
 };
 
 // ncfadectx -------------------------------------------------------------------
@@ -279,7 +336,6 @@ pub use ffi::{
 // IPREFIXCOLUMNS,
 // IPREFIXSTRLEN,
 
-
 // ncmultiselector -------------------------------------------------------------
 //
 // already wrapped:
@@ -321,14 +377,18 @@ pub use ffi::{
 //
 // // functions
 // ncplane_channels,
+// ncplane_gradient,
 // ncplane_set_bchannel,
 // ncplane_set_fchannel,
-// ncplane_set_channels
+// ncplane_set_channels,
 //
 // // constants
 // NCPLANE_OPTION_HORALIGNED,
 // NCPLANE_OPTION_MARGINALIZED,
-// NCPLANE_OPTION_VERALIGNED
+// NCPLANE_OPTION_VERALIGNED,
+//
+// // type alias
+// ncdirectv,
 
 #[doc(inline)]
 pub use ffi::{
@@ -354,12 +414,12 @@ pub use ffi::{
     ncplane_dim_yx,
     ncplane_dup,
     ncplane_erase,
+    ncplane_erase_region,
     ncplane_fadein,
     ncplane_fadein_iteration,
     ncplane_fadeout,
     ncplane_fadeout_iteration,
     ncplane_format,
-    ncplane_gradient,
     ncplane_greyscale,
     ncplane_highgradient,
     ncplane_highgradient_sized,
@@ -403,6 +463,7 @@ pub use ffi::{
     ncplane_resizecb,
     ncplane_rotate_ccw,
     ncplane_rotate_cw,
+    ncplane_scrolling_p,
     ncplane_set_base,
     ncplane_set_base_cell,
     ncplane_set_bg_alpha,
@@ -511,7 +572,7 @@ pub use ffi::{
 // ncprogbar_options,
 //
 // // constants
-// NCPROGBAR_OPTION_RETROGRADE
+// NCPROGBAR_OPTION_RETROGRADE,
 
 #[doc(inline)]
 pub use ffi::{
@@ -600,18 +661,14 @@ pub use ffi::{
 // already wrapped:
 //
 // // constants
-// NCSTYLE_BLINK,
-// NCSTYLE_BOLD,
-// NCSTYLE_DIM,
-// NCSTYLE_INVIS,
-// NCSTYLE_ITALIC,
 // NCSTYLE_MASK,
-// NCSTYLE_NONE,
-// NCSTYLE_PROTECT,
-// NCSTYLE_REVERSE,
-// NCSTYLE_STANDOUT,
-// NCSTYLE_STRUCK,
+// NCSTYLE_ITALIC,
 // NCSTYLE_UNDERLINE,
+// NCSTYLE_UNDERCURL,
+// NCSTYLE_BOLD,
+// NCSTYLE_STRUCK,
+// NCSTYLE_BLINK,
+// NCSTYLE_NONE,
 
 // nctablet --------------------------------------------------------------------
 //
@@ -648,6 +705,13 @@ pub use ffi::{
     nctree_redraw,
 };
 
+// ncvgeom ---------------------------------------------------------------------
+//
+// already wrapped:
+//
+// // structs
+// ncvgeom
+
 // ncvisual --------------------------------------------------------------------
 //
 // already wrapped:
@@ -662,7 +726,8 @@ pub use ffi::{
 // NCVISUAL_OPTION_CHILDPLANE
 // NCVISUAL_OPTION_HORALIGNED
 // NCVISUAL_OPTION_NODEGRADE,
-// NCVISUAL_OPTION_VERALIGNED
+// NCVISUAL_OPTION_NOINTERPOLATE
+// NCVISUAL_OPTION_VERALIGNED,
 
 #[doc(inline)]
 pub use ffi::{
@@ -675,12 +740,14 @@ pub use ffi::{
     ncvisual_from_bgra,
     ncvisual_from_file,
     ncvisual_from_plane,
+    ncvisual_from_rgb_loose,
+    ncvisual_from_rgb_packed,
     ncvisual_from_rgba,
-    ncvisual_inflate,
     ncvisual_media_defblitter,
     ncvisual_polyfill_yx,
     ncvisual_render,
     ncvisual_resize,
+    ncvisual_resize_noninterpolative,
     ncvisual_rotate,
     ncvisual_set_yx,
     ncvisual_simple_streamer,
@@ -703,6 +770,7 @@ pub use ffi::{
 // NCOPTION_NO_FONT_CHANGES,
 // NCOPTION_NO_QUIT_SIGHANDLERS,
 // NCOPTION_NO_WINCH_SIGHANDLER,
+// NCOPTION_PRESERVE_CURSOR,
 // NCOPTION_SUPPRESS_BANNERS,
 
 #[doc(inline)]
@@ -724,8 +792,9 @@ pub use ffi::{
     notcurses_core_init,
     notcurses_cursor_disable,
     notcurses_cursor_enable,
+    notcurses_cursor_yx,
     notcurses_debug,
-    notcurses_debug_caps,
+    notcurses_detected_terminal,
     notcurses_drop_planes,
     notcurses_getc,
     notcurses_init,
@@ -775,27 +844,9 @@ pub use ffi::{
     NCPALETTESIZE,
 };
 
-// sig -------------------------------------------------------------------------
-//
-// already wrapped:
-//
-// // structs
-// sigset_t,
-// sigaction,
-//
-// // functions
-// sigaddset,
-// sigdelset,
-// sigemptyset,
-// sigfillset,
-// sigismember,
-// sigpending,
-// sigprocmask,
-// sigsuspend,
-
 // fade callback ---------------------------------------------------------------
 //
 // already wrapped:
 //
 // // types
-// fadecb
+// fadecb,

@@ -1,6 +1,6 @@
 % notcurses_output(3)
 % nick black <nickblack@linux.com>
-% v2.3.0
+% v2.3.7
 
 # NAME
 
@@ -99,6 +99,9 @@ by **'\0'**. The EGC must be well-formed, and must not contain any cluster
 breaks. For more information, consult [Unicode® Standard Annex #29](https://unicode.org/reports/tr29/).
 Functions accepting a set of EGCs must consist of a series of well-formed EGCs,
 broken by cluster breaks, terminated by the appropriate NUL terminator.
+
+Control characters are rejected, except for a newline when the output plane
+is in scrolling mode. A newline outside of scrolling mode will be rejected.
 
 These functions output to the `ncplane`'s current cursor location. Aside from
 **ncplane_puttext()**, they *do not* move to the next line upon reaching the

@@ -314,6 +314,7 @@ int kitty_rebuild(sprixel* s, int ycell, int xcell, uint8_t* auxvec){
 //fprintf(stderr, "CLEARED ROW, TARGY: %d\n", targy - 1);
         if(--targy == 0){
           s->n->tam[s->dimx * ycell + xcell].state = state;
+          s->invalidated = SPRIXEL_INVALIDATED;
           return 0;
         }
         thisrow = targx;
@@ -421,14 +422,20 @@ int kitty_wipe(sprixel* s, int ycell, int xcell){
 // 16 base64-encoded bytes. 4096 / 16 == 256 3-pixel groups, or 768 pixels.
 // closes |fp| on all paths.
 static int
-write_kitty_data(FILE* fp, int linesize, int leny, int lenx,
-                 int cols, const uint32_t* data, int cdimy, int cdimx,
-                 int sprixelid, tament* tam, int* parse_start,
-                 uint32_t transcolor){
+write_kitty_data(FILE* fp, int linesize, int leny, int lenx, int cols,
+                 const uint32_t* data, const blitterargs* bargs,
+                 tament* tam, int* parse_start){
+//fprintf(stderr, "drawing kitty %p\n", tam);
   if(linesize % sizeof(*data)){
     fclose(fp);
     return -1;
   }
+  bool scroll = bargs->flags & NCVISUAL_OPTION_SCROLL;
+  bool translucent = bargs->flags & NCVISUAL_OPTION_BLEND;
+  int sprixelid = bargs->u.pixel.spx->id;
+  int cdimy = bargs->u.pixel.celldimy;
+  int cdimx = bargs->u.pixel.celldimx;
+  uint32_t transcolor = bargs->transcolor;
   int total = leny * lenx; // total number of pixels (4 * total == bytecount)
   // number of 4KiB chunks we'll need
   int chunks = (total + (RGBA_MAXLEN - 1)) / RGBA_MAXLEN;
@@ -439,8 +446,9 @@ write_kitty_data(FILE* fp, int linesize, int leny, int lenx,
 //fprintf(stderr, "total: %d chunks = %d, s=%d,v=%d\n", total, chunks, lenx, leny);
   while(chunks--){
     if(totalout == 0){
-      *parse_start = fprintf(fp, "\e_Gf=32,s=%d,v=%d,i=%d,a=T,%c=1;",
-                             lenx, leny, sprixelid, chunks ? 'm' : 'q');
+      *parse_start = fprintf(fp, "\e_Gf=32,s=%d,v=%d,i=%d,p=1,a=T,%c=1%s;",
+                             lenx, leny, sprixelid, chunks ? 'm' : 'q',
+                             scroll ? "" : ",C=1");
     }else{
       fprintf(fp, "\e_G%sm=%d;", chunks ? "" : "q=2,", chunks ? 1 : 0);
     }
@@ -461,12 +469,20 @@ write_kitty_data(FILE* fp, int linesize, int leny, int lenx,
         }
         const uint32_t* line = data + (linesize / sizeof(*data)) * y;
         source[e] = line[x];
+        if(translucent){
+          ncpixel_set_a(&source[e], ncpixel_a(source[e]) / 2);
+        }
 //fprintf(stderr, "%u/%u/%u -> %c%c%c%c %u %u %u %u\n", r, g, b, b64[0], b64[1], b64[2], b64[3], b64[0], b64[1], b64[2], b64[3]);
         int xcell = x / cdimx;
         int ycell = y / cdimy;
         int tyx = xcell + ycell * cols;
-//fprintf(stderr, "Tyx: %d y: %d (%d) * %d x: %d (%d) state %d\n", tyx, y, y / cdimy, cols, x, x / cdimx, tam[tyx].state);
+//fprintf(stderr, "Tyx: %d y: %d (%d) * %d x: %d (%d) state %d %p\n", tyx, y, y / cdimy, cols, x, x / cdimx, tam[tyx].state, tam[tyx].auxvector);
         if(tam[tyx].state == SPRIXCELL_ANNIHILATED || tam[tyx].state == SPRIXCELL_ANNIHILATED_TRANS){
+          // this pixel is part of a cell which is currently wiped (alpha-nulled
+          // out, to present a glyph "atop" it). we will continue to mark it
+          // transparent, but we need to update the auxiliary vector.
+          const int vyx = (y % cdimy) * cdimx + (x % cdimx);
+          tam[tyx].auxvector[vyx] = ncpixel_a(source[e]);
           wipe[e] = 1;
         }else{
           wipe[e] = 0;
@@ -503,8 +519,8 @@ write_kitty_data(FILE* fp, int linesize, int leny, int lenx,
 
 // Kitty graphics blitter. Kitty can take in up to 4KiB at a time of (optionally
 // deflate-compressed) 24bit RGB. Returns -1 on error, 1 on success.
-int kitty_blit(ncplane* n, int linesize, const void* data,
-               int leny, int lenx, const blitterargs* bargs){
+int kitty_blit(ncplane* n, int linesize, const void* data, int leny, int lenx,
+               const blitterargs* bargs, int bpp __attribute__ ((unused))){
   int cols = bargs->u.pixel.spx->dimx;
   int rows = bargs->u.pixel.spx->dimy;
   char* buf = NULL;
@@ -534,10 +550,7 @@ int kitty_blit(ncplane* n, int linesize, const void* data,
     memset(tam, 0, sizeof(*tam) * rows * cols);
   }
   // closes fp on all paths
-  if(write_kitty_data(fp, linesize, leny, lenx, cols, data,
-                      bargs->u.pixel.celldimy, bargs->u.pixel.celldimx,
-                      bargs->u.pixel.spx->id, tam, &parse_start,
-                      bargs->transcolor)){
+  if(write_kitty_data(fp, linesize, leny, lenx, cols, data, bargs, tam, &parse_start)){
     if(!reuse){
       free(tam);
     }
@@ -566,21 +579,21 @@ int kitty_remove(int id, FILE* out){
 
 // removes the kitty bitmap graphic identified by s->id, and damages those
 // cells which weren't SPRIXCEL_OPAQUE
-int kitty_destroy(const notcurses* nc, const ncpile* p, FILE* out, sprixel* s){
+int kitty_destroy(const notcurses* nc __attribute__ ((unused)),
+                  const ncpile* p, FILE* out, sprixel* s){
   if(kitty_remove(s->id, out)){
     return -1;
   }
 //fprintf(stderr, "FROM: %d/%d state: %d s->n: %p\n", s->movedfromy, s->movedfromx, s->invalidated, s->n);
-  const ncplane* stdn = notcurses_stdplane_const(nc);
   for(int yy = s->movedfromy ; yy < s->movedfromy + s->dimy && yy < p->dimy ; ++yy){
     for(int xx = s->movedfromx ; xx < s->movedfromx + s->dimx && xx < p->dimx ; ++xx){
-      const int ridx = (yy - stdn->absy) * p->dimx + (xx - stdn->absx);
+      const int ridx = yy * p->dimx + xx;
       struct crender *r = &p->crender[ridx];
       if(!r->sprixel){
         if(s->n){
 //fprintf(stderr, "CHECKING %d/%d\n", yy - s->movedfromy, xx - s->movedfromx);
-          sprixcell_e state = sprixel_state(s, yy - s->movedfromy + s->n->absy - stdn->absy,
-                                              xx - s->movedfromx + s->n->absx - stdn->absx);
+          sprixcell_e state = sprixel_state(s, yy - s->movedfromy + s->n->absy,
+                                              xx - s->movedfromx + s->n->absx);
           if(state == SPRIXCELL_OPAQUE_KITTY){
             r->s.damaged = 1;
           }else if(s->invalidated == SPRIXEL_MOVED){
@@ -599,11 +612,22 @@ int kitty_destroy(const notcurses* nc, const ncpile* p, FILE* out, sprixel* s){
   return 0;
 }
 
+// returns the number of bytes written
 int kitty_draw(const ncpile* p, sprixel* s, FILE* out){
-//fprintf(stderr, "DRAWING %d\n", s->id);
+  (void)p;
+  int ret = s->glyphlen;
+  if(fwrite(s->glyph, s->glyphlen, 1, out) != 1){
+    ret = -1;
+  }
+  s->invalidated = SPRIXEL_QUIESCENT;
+  return ret;
+}
+
+// returns -1 on failure, 0 on success (move bytes do not count for sprixel stats)
+int kitty_move(const ncpile* p, sprixel* s, FILE* out){
   (void)p;
   int ret = 0;
-  if(fwrite(s->glyph, s->glyphlen, 1, out) != 1){
+  if(fprintf(out, "\e_Ga=p,i=%d,p=1,q=2\e\\", s->id) < 0){
     ret = -1;
   }
   s->invalidated = SPRIXEL_QUIESCENT;
@@ -621,4 +645,13 @@ int kitty_shutdown(int fd){
   // lock up the terminal
   (void)fd;
   return 0;
+}
+
+uint8_t* kitty_trans_auxvec(const tinfo* ti){
+  const size_t slen = ti->cellpixy * ti->cellpixx;
+  uint8_t* a = malloc(slen);
+  if(a){
+    memset(a, 0, slen);
+  }
+  return a;
 }

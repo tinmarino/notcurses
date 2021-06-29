@@ -1,6 +1,6 @@
 % notcurses_init(3)
 % nick black <nickblack@linux.com>
-% v2.3.0
+% v2.3.7
 
 # NAME
 
@@ -15,6 +15,7 @@ notcurses_init - initialize a notcurses instance
 #define NCOPTION_NO_CLEAR_BITMAPS    0x0002ull
 #define NCOPTION_NO_WINCH_SIGHANDLER 0x0004ull
 #define NCOPTION_NO_QUIT_SIGHANDLERS 0x0008ull
+#define NCOPTION_PRESERVE_CURSOR     0x0010ull
 #define NCOPTION_SUPPRESS_BANNERS    0x0020ull
 #define NCOPTION_NO_ALTERNATE_SCREEN 0x0040ull
 #define NCOPTION_NO_FONT_CHANGES     0x0080ull
@@ -48,6 +49,8 @@ typedef struct notcurses_options {
 
 **int notcurses_cursor_enable(struct notcurses* ***nc***, int ***y***, int ***x***);**
 
+**int notcurses_cursor_yx(struct notcurses* ***nc***, int* ***y***, int* ***x***);**
+
 **int notcurses_cursor_disable(struct notcurses* ***nc***);**
 
 # DESCRIPTION
@@ -55,9 +58,8 @@ typedef struct notcurses_options {
 **notcurses_init** prepares the terminal for cursor-addressable (multiline)
 mode. The **FILE** provided as ***fp*** must be writable and attached to a
 terminal, or **NULL**. If it is **NULL**, **/dev/tty** will be opened. The
-**struct notcurses_option** passed as ***opts*** controls behavior. Only one
-instance should be associated with a given terminal at a time, though it is no
-problem to have multiple instances in a given process.
+**struct notcurses_option** passed as ***opts*** controls behavior. A process
+can have only one Notcurses context active at a time.
 
 On success, a pointer to a valid **struct notcurses** is returned. **NULL** is
 returned on failure. Before the process exits, **notcurses_stop(3)** should be
@@ -75,11 +77,16 @@ If the terminal advertises support for an "alternate screen" via the **smcup**
 terminfo capability, notcurses will employ it by default. This can be prevented
 by setting **NCOPTION_NO_ALTERNATE_SCREEN** in ***flags***. Users tend to have
 strong opinions regarding the alternate screen, so it's often useful to expose
-this via a command-line option.
+this via a command-line option. When the alternate screen is not used, the
+contents of the terminal at startup remain visible until obliterated, on a
+cell-by-cell basis (see **notcurses_plane(3)** for details on clearing the
+screen at startup without using the alternate screen).
 
 notcurses hides the cursor by default. It can be dynamically enabled, moved, or
-disabled during execution via **notcurses_cursor_enable(3)** and
-**notcurses_cursor_disable(3)**.
+disabled during execution via **notcurses_cursor_enable** and
+**notcurses_cursor_disable**. It will be hidden while updating the screen.
+The current location of the terminal cursor can be acquired with
+**notcurses_cursor_yx**, whether visible or not.
 
 **notcurses_init** typically emits some diagnostics at startup, including version
 information and some details of the configured terminal. This can be inhibited
@@ -92,8 +99,7 @@ will be performed on the entirety of the viewing area. This is orthogonal to
 use of the alternate screen; using the alternate screen plus margins will see
 the full screen cleared, followed by rendering to a subregion. Inhibiting the
 alternate screen plus margins will see rendering to a subregion, with the screen
-outside this region not cleared. This is the only means by which existing
-output can be undisturbed by notcurses. Margins are best-effort. Supplying any
+outside this region not cleared. Margins are best-effort. Supplying any
 negative margin is an error. **notcurses_lex_margins** provides lexing a
 margin argument expression in one of two forms:
 
@@ -179,11 +185,50 @@ standard plane (see **notcurses_stdplane(3)**) will be resized to the new
 screen size. The next **notcurses_render(3)** call will function as expected
 across the new screen geometry.
 
+## The hardware cursor
+
+Most terminals provide a cursor, a visual indicator of where output will next
+be placed. There is usually (but not always) some degree of control over what
+glyph forms this cursor, and whether it e.g. blinks.
+
+By default, Notcurses disables this cursor in rendered mode. It can be turned
+back on with **notcurses_enable_cursor**, which has immediate effect (there is
+no need to call **notcurses_render(3)**. If already visible, this function
+updates the location. Each time the physical screen is updated, Notcurses will
+disable the cursor, write the update, move the cursor back to this location,
+and finally make the cursor visible. **notcurses_cursor_yx** retrieves the
+location of the cursor, whether visible or not. **notcurses_disable_cursor**
+hides the cursor.
+
+You generally shouldn't need to touch the terminal cursor. It's only really
+relevant with echoed user input, and you don't want echoed user input in
+rendered mode (instead, read the input, and write it to a plane yourself).
+A subprocess can be streamed to a plane with an **ncsubproc**, etc.
+
+If the **NCOPTION_PRESERVE_CURSOR** flag is provided, the cursor's location
+will be determined at startup, and the standard plane's virtual cursor will
+be placed to match it (instead of in the upper-left corner). Combined with
+**NCOPTION_NO_ALTERNATE_SCREEN** and a scrolling standard plane, this allows
+rendered mode to be used as a normal scrolling shell application.
+
 # RETURN VALUES
 
 **NULL** is returned on failure. Otherwise, the return value points at a valid
 **struct notcurses**, which can be used until it is provided to
 **notcurses_stop(3)**.
+
+**notcurses_cursor_disable** returns -1 if the cursor is already invisible.
+
+# NOTES
+
+Several command-line options and keybindings are recommended for Notcurses
+rendered-mode programs:
+
+* **-l[0-8]** ought be mapped to the various **NCLOGLEVEL** values.
+  Alternatively, map **-v** to **NCLOGLEVEL_WARNING**, and map
+  **-vv** to **NCLOGLEVEL_INFO**.
+* **-k** ought be mapped to **NCOPTION_NO_ALTERNATE_SCREEN**.
+* Ctrl+L ought be mapped to **notcurses_refresh(3)**.
 
 # SEE ALSO
 

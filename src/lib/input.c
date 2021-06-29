@@ -1,3 +1,4 @@
+#include "input.h"
 #include "internal.h"
 #include "notcurses/direct.h"
 #include <poll.h>
@@ -20,6 +21,9 @@ void sigwinch_handler(int signo){
 }
 
 int cbreak_mode(int ttyfd, const struct termios* tpreserved){
+  if(ttyfd < 0){
+    return 0;
+  }
   // assume it's not a true terminal (e.g. we might be redirected to a file)
   struct termios modtermios;
   memcpy(&modtermios, tpreserved, sizeof(modtermios));
@@ -45,12 +49,12 @@ int notcurses_linesigs_disable(notcurses* n){
   }
   struct termios tios;
   if(tcgetattr(n->ttyfd, &tios)){
-    logerror(n, "Couldn't preserve terminal state for %d (%s)\n", n->ttyfd, strerror(errno));
+    logerror("Couldn't preserve terminal state for %d (%s)\n", n->ttyfd, strerror(errno));
     return -1;
   }
   tios.c_lflag &= ~ISIG;
   if(tcsetattr(n->ttyfd, TCSANOW, &tios)){
-    logerror(n, "Error disabling signals on %d (%s)\n", n->ttyfd, strerror(errno));
+    logerror("Error disabling signals on %d (%s)\n", n->ttyfd, strerror(errno));
     return -1;
   }
   return 0;
@@ -64,12 +68,12 @@ int notcurses_linesigs_enable(notcurses* n){
   }
   struct termios tios;
   if(tcgetattr(n->ttyfd, &tios)){
-    logerror(n, "Couldn't preserve terminal state for %d (%s)\n", n->ttyfd, strerror(errno));
+    logerror("Couldn't preserve terminal state for %d (%s)\n", n->ttyfd, strerror(errno));
     return -1;
   }
   tios.c_lflag |= ~ISIG;
   if(tcsetattr(n->ttyfd, TCSANOW, &tios)){
-    logerror(n, "Error disabling signals on %d (%s)\n", n->ttyfd, strerror(errno));
+    logerror("Error disabling signals on %d (%s)\n", n->ttyfd, strerror(errno));
     return -1;
   }
   return 0;
@@ -112,7 +116,8 @@ create_esctrie_node(int special){
   return e;
 }
 
-void input_free_esctrie(esctrie** eptr){
+static void
+input_free_esctrie(esctrie** eptr){
   esctrie* e;
   if( (e = *eptr) ){
     if(e->trie){
@@ -154,7 +159,9 @@ ncinputlayer_add_input_escape(ncinputlayer* nc, const char* esc, char32_t specia
     if(validate){
       if((*cur)->trie == NULL){
         const size_t tsize = sizeof((*cur)->trie) * 0x80;
-        (*cur)->trie = malloc(tsize);
+        if(((*cur)->trie = malloc(tsize)) == NULL){
+          return -1;
+        }
         memset((*cur)->trie, 0, tsize);
       }
       cur = &(*cur)->trie[validate];
@@ -333,7 +340,7 @@ block_on_input(int fd, const struct timespec* ts, const sigset_t* sigmask){
   if(sigmask){
     memcpy(&scratchmask, sigmask, sizeof(*sigmask));
   }else{
-    pthread_sigmask(0, NULL, &scratchmask);
+    sigfillset(&scratchmask);
   }
   sigdelset(&scratchmask, SIGCONT);
   sigdelset(&scratchmask, SIGWINCH);
@@ -384,14 +391,8 @@ handle_queued_input(ncinputlayer* nc, ncinput* ni, int leftmargin, int topmargin
 static char32_t
 handle_input(ncinputlayer* nc, ncinput* ni, int leftmargin, int topmargin,
              const sigset_t* sigmask){
-  // we once used getc() here (and kept ttyinfp, a FILE*, instead of the file
-  // descriptor ttyinfd), but under tmux, the first time running getc() would
-  // (bewilderingly) see a series of terminal reset codes emitted. this has
-  // never been explained to my satisfaction, but we can work around it by
-  // using a lower-level read() anyway.
-  // see https://github.com/dankamongmen/notcurses/issues/1314 for more info.
   unsigned char c;
-  while(!input_queue_full(nc) && read(nc->ttyinfd, &c, 1) > 0){
+  while(!input_queue_full(nc) && read(nc->infd, &c, 1) > 0){
     nc->inputbuf[nc->inputbuf_write_at] = c;
 //fprintf(stderr, "OCCUPY: %u@%u read: %d\n", nc->inputbuf_occupied, nc->inputbuf_write_at, nc->inputbuf[nc->inputbuf_write_at]);
     if(++nc->inputbuf_write_at == sizeof(nc->inputbuf) / sizeof(*nc->inputbuf)){
@@ -399,7 +400,7 @@ handle_input(ncinputlayer* nc, ncinput* ni, int leftmargin, int topmargin,
     }
     ++nc->inputbuf_occupied;
     const struct timespec ts = {};
-    if(block_on_input(nc->ttyinfd, &ts, sigmask) < 1){
+    if(block_on_input(nc->infd, &ts, sigmask) < 1){
       break;
     }
   }
@@ -453,7 +454,7 @@ ncinputlayer_prestamp(ncinputlayer* nc, const struct timespec *ts,
     return handle_queued_input(nc, ni, leftmargin, topmargin);
   }
   errno = 0;
-  if(block_on_input(nc->ttyinfd, ts, sigmask) > 0){
+  if(block_on_input(nc->infd, ts, sigmask) > 0){
 //fprintf(stderr, "%d events from input!\n", events);
     return handle_ncinput(nc, ni, leftmargin, topmargin, sigmask);
   }
@@ -464,10 +465,10 @@ ncinputlayer_prestamp(ncinputlayer* nc, const struct timespec *ts,
 // infp has already been set non-blocking
 char32_t notcurses_getc(notcurses* nc, const struct timespec *ts,
                         const sigset_t* sigmask, ncinput* ni){
-  char32_t r = ncinputlayer_prestamp(&nc->input, ts, sigmask, ni,
+  char32_t r = ncinputlayer_prestamp(&nc->tcache.input, ts, sigmask, ni,
                                      nc->margin_l, nc->margin_t);
   if(r != (char32_t)-1){
-    uint64_t stamp = nc->input.input_events++; // need increment even if !ni
+    uint64_t stamp = nc->tcache.input.input_events++; // need increment even if !ni
     if(ni){
       ni->seqnum = stamp;
     }
@@ -477,9 +478,9 @@ char32_t notcurses_getc(notcurses* nc, const struct timespec *ts,
 
 char32_t ncdirect_getc(ncdirect* nc, const struct timespec *ts,
                        sigset_t* sigmask, ncinput* ni){
-  char32_t r = ncinputlayer_prestamp(&nc->input, ts, sigmask, ni, 0, 0);
+  char32_t r = ncinputlayer_prestamp(&nc->tcache.input, ts, sigmask, ni, 0, 0);
   if(r != (char32_t)-1){
-    uint64_t stamp = nc->input.input_events++; // need increment even if !ni
+    uint64_t stamp = nc->tcache.input.input_events++; // need increment even if !ni
     if(ni){
       ni->seqnum = stamp;
     }
@@ -487,7 +488,9 @@ char32_t ncdirect_getc(ncdirect* nc, const struct timespec *ts,
   return r;
 }
 
-int prep_special_keys(ncinputlayer* nc){
+// load all known special keys from terminfo, and build the input sequence trie
+static int
+prep_special_keys(ncinputlayer* nc){
   static const struct {
     const char* tinfo;
     char32_t key;
@@ -599,6 +602,637 @@ int prep_special_keys(ncinputlayer* nc){
   if(ncinputlayer_add_input_escape(nc, CSIPREFIX, NCKEY_CSI)){
     fprintf(stderr, "Couldn't add support for %s\n", k->tinfo);
     return -1;
+  }
+  return 0;
+}
+
+void ncinputlayer_stop(ncinputlayer* nilayer){
+  if(nilayer->ttyfd >= 0){
+    close(nilayer->ttyfd);
+  }
+  input_free_esctrie(&nilayer->inputescapes);
+}
+
+typedef enum {
+  STATE_NULL,
+  STATE_ESC,  // escape; aborts any active sequence
+  STATE_CSI,  // control sequence introducer
+  STATE_DCS,  // device control string
+  // XTVERSION replies with DCS > | ... ST
+  STATE_XTVERSION1,
+  STATE_XTVERSION2,
+  // XTGETTCAP replies with DCS 1 + r for a good request, or 0 + r for bad
+  STATE_XTGETTCAP1, // XTGETTCAP, got '0/1' (DCS 0/1 + r Pt ST)
+  STATE_XTGETTCAP2, // XTGETTCAP, got '+' (DCS 0/1 + r Pt ST)
+  STATE_XTGETTCAP3, // XTGETTCAP, got 'r' (DCS 0/1 + r Pt ST)
+  STATE_XTGETTCAP_TERMNAME1, // got property 544E, 'TN' (terminal name) first hex nibble
+  STATE_XTGETTCAP_TERMNAME2, // got property 544E, 'TN' (terminal name) second hex nibble
+  STATE_DCS_DRAIN,  // throw away input until we hit escape
+  STATE_BG1,        // got '1'
+  STATE_BG2,        // got second '1'
+  STATE_BGSEMI,     // got '11;', draining string to ESC ST
+  STATE_TDA1, // tertiary DA, got '!'
+  STATE_TDA2, // tertiary DA, got '|', first hex nibble
+  STATE_TDA3, // tertiary DA, second hex nibble
+  STATE_SDA,  // secondary DA (CSI > Pp ; Pv ; Pc c)
+  STATE_DA,   // primary DA   (CSI ? ... c) OR XTSMGRAPHICS OR DECRPM
+  STATE_DA_1, // got '1', XTSMGRAPHICS color registers or primary DA
+  STATE_DA_1_SEMI, // got '1;'
+  STATE_DA_1_0, // got '1;0', XTSMGRAPHICS color registers or VT101
+  STATE_DA_6, // got '6', could be VT102 or VT220/VT320/VT420
+  STATE_DA_DRAIN, // drain out the primary DA to an alpha
+  STATE_SIXEL,// XTSMGRAPHICS about Sixel geometry (got '2')
+  STATE_SIXEL_SEMI1,   // got first semicolon in sixel geometry, want Ps
+  STATE_SIXEL_SUCCESS, // got Ps == 0, want second semicolon
+  STATE_SIXEL_WIDTH,   // reading maximum sixel width until ';'
+  STATE_SIXEL_HEIGHT,  // reading maximum sixel height until 'S'
+  STATE_SIXEL_CREGS,   // reading max color registers until 'S'
+  STATE_XTSMGRAPHICS_DRAIN, // drain out XTSMGRAPHICS to 'S'
+  STATE_APPSYNC_REPORT, // got DECRPT ?2026
+  STATE_APPSYNC_REPORT_DRAIN, // drain out decrpt to 'y'
+  STATE_CURSOR, // reading row of cursor location to ';'
+  STATE_CURSOR_COL, // reading col of cursor location to 'R'
+} initstates_e;
+
+typedef struct query_state {
+  struct tinfo* tcache;
+  // if the terminal unambiguously identifies itself in response to our
+  // queries, use that identification for advanced feature support.
+  queried_terminals_e qterm;
+  char* version;        // terminal version, if detected. heap-allocated.
+  // stringstate is the state at which this string was initialized, and can be
+  // one of STATE_XTVERSION1, STATE_XTGETTCAP_TERMNAME1, STATE_TDA1, and STATE_BG1
+  initstates_e state, stringstate;
+  int numeric;           // currently-lexed numeric
+  char runstring[80];    // running string
+  size_t stridx;         // position to write in string
+  uint32_t bg;           // queried default background or 0
+  int cursor_y, cursor_x;// cursor location
+  bool xtgettcap_good;   // high when we've received DCS 1
+  bool appsync;          // application-synchronized updates advertised
+} query_state;
+
+static int
+ruts_numeric(int* numeric, unsigned char c){
+  if(!isdigit(c)){
+    return -1;
+  }
+  int digit = c - '0';
+  if(INT_MAX / 10 - digit < *numeric){ // would overflow
+    return -1;
+  }
+  *numeric *= 10;
+  *numeric += digit;
+  return 0;
+}
+
+static int
+ruts_hex(int* numeric, unsigned char c){
+  if(!isxdigit(c)){
+    return -1;
+  }
+  int digit;
+  if(isdigit(c)){
+    digit = c - '0';
+  }else if(islower(c)){
+    digit = c - 'a' + 10;
+  }else if(isupper(c)){
+    digit = c - 'A' + 10;
+  }else{
+    return -1; // should be impossible to reach
+  }
+  if(INT_MAX / 10 - digit < *numeric){ // would overflow
+    return -1;
+  }
+  *numeric *= 16;
+  *numeric += digit;
+  return 0;
+}
+
+// add a decoded hex byte to the string
+static int
+ruts_string(query_state* inits, initstates_e state){
+  if(inits->stridx == sizeof(inits->runstring)){
+    return -1; // overflow, too long
+  }
+  if(inits->numeric > 255){
+    return -1;
+  }
+  unsigned char c = inits->numeric;
+  if(!isprint(c)){
+    return -1;
+  }
+  inits->stringstate = state;
+  inits->runstring[inits->stridx] = c;
+  inits->runstring[++inits->stridx] = '\0';
+  return 0;
+}
+
+// extract the terminal version from the running string, following 'prefix'
+static int
+extract_version(query_state* qstate, size_t slen){
+  size_t bytes = strlen(qstate->runstring + slen) + 1;
+  qstate->version = malloc(bytes);
+  if(qstate->version == NULL){
+    return -1;
+  }
+  memcpy(qstate->version, qstate->runstring + slen, bytes);
+  return 0;
+}
+
+static int
+extract_xtversion(query_state* qstate, size_t slen, char suffix){
+  if(suffix){
+    if(qstate->runstring[qstate->stridx - 1] != suffix){
+      return -1;
+    }
+    qstate->runstring[qstate->stridx - 1] = '\0';
+  }
+  return extract_version(qstate, slen);
+}
+
+static int
+stash_string(query_state* inits){
+//fprintf(stderr, "string terminator after %d [%s]\n", inits->stringstate, inits->runstring);
+  switch(inits->stringstate){
+    // FIXME replace these with some structured loop
+    case STATE_XTVERSION1:{
+      static const struct {
+        const char* prefix;
+        char suffix;
+        queried_terminals_e term;
+      } xtvers[] = {
+        { .prefix = "XTerm(", .suffix = ')', .term = TERMINAL_XTERM, },
+        { .prefix = "WezTerm ", .suffix = 0, .term = TERMINAL_WEZTERM, },
+        { .prefix = "contour ", .suffix = 0, .term = TERMINAL_CONTOUR, },
+        { .prefix = "kitty(", .suffix = ')', .term = TERMINAL_KITTY, },
+        { .prefix = "foot(", .suffix = ')', .term = TERMINAL_FOOT, },
+        { .prefix = "iTerm2 [", .suffix = ']', .term = TERMINAL_ITERM, },
+        { .prefix = NULL, .suffix = 0, .term = TERMINAL_UNKNOWN, },
+      }, *xtv;
+      for(xtv = xtvers ; xtv->prefix ; ++xtv){
+        if(strncmp(inits->runstring, xtv->prefix, strlen(xtv->prefix)) == 0){
+          if(extract_xtversion(inits, strlen(xtv->prefix), xtv->suffix) == 0){
+            inits->qterm = xtv->term;
+          }
+          break;
+        }
+      }
+      break;
+    }case STATE_XTGETTCAP_TERMNAME1:
+      if(strcmp(inits->runstring, "xterm-kitty") == 0){
+        inits->qterm = TERMINAL_KITTY;
+      }else if(strcmp(inits->runstring, "mlterm") == 0){
+        inits->qterm = TERMINAL_MLTERM;
+      }
+      break;
+    case STATE_TDA1:
+      if(strcmp(inits->runstring, "~VTE") == 0){
+        inits->qterm = TERMINAL_VTE;
+      }else if(strcmp(inits->runstring, "FOOT") == 0){
+        inits->qterm = TERMINAL_FOOT;
+      }
+      break;
+    case STATE_BG1:{
+      int r, g, b;
+      if(sscanf(inits->runstring, "rgb:%02x/%02x/%02x", &r, &g, &b) == 3){
+        // great! =]
+      }else if(sscanf(inits->runstring, "rgb:%04x/%04x/%04x", &r, &g, &b) == 3){
+        r /= 256;
+        g /= 256;
+        b /= 256;
+      }else{
+        break;
+      }
+      inits->bg = (r << 16u) | (g << 8u) | b;
+      break;
+    }default:
+      fprintf(stderr, "invalid string stashed %d\n", inits->stringstate);
+      break;
+  }
+  inits->runstring[0] = '\0';
+  inits->stridx = 0;
+  return 0;
+}
+
+// FIXME ought implement the full Williams automaton
+// FIXME sloppy af in general
+// returns 1 after handling the Device Attributes response, 0 if more input
+// ought be fed to the machine, and -1 on an invalid state transition.
+static int
+pump_control_read(query_state* inits, unsigned char c){
+//fprintf(stderr, "state: %2d char: %1c %3d %02x\n", inits->state, isprint(c) ? c : ' ', c, c);
+  if(c == NCKEY_ESC){
+    inits->state = STATE_ESC;
+    return 0;
+  }
+  switch(inits->state){
+    case STATE_NULL:
+      // not an escape -- throw into user queue
+      break;
+    case STATE_ESC:
+      inits->numeric = 0;
+      if(c == '['){
+        inits->state = STATE_CSI;
+      }else if(c == 'P'){
+        inits->state = STATE_DCS;
+      }else if(c == '\\'){
+        if(stash_string(inits)){
+          return -1;
+        }
+        inits->state = STATE_NULL;
+      }else if(c == '1'){
+        inits->state = STATE_BG1;
+      }
+      break;
+    case STATE_BG1:
+      if(c == '1'){
+        inits->state = STATE_BG2;
+      }else{
+        // FIXME
+      }
+      break;
+    case STATE_BG2:
+      if(c == ';'){
+        inits->state = STATE_BGSEMI;
+        inits->stridx = 0;
+        inits->runstring[0] = '\0';
+      }else{
+        // FIXME
+      }
+      break;
+    case STATE_BGSEMI: // drain string
+      if(c == '\x07'){ // contour sends this at the end for some unknown reason
+        if(stash_string(inits)){
+          return -1;
+        }
+        inits->state = STATE_NULL;
+        break;
+      }
+      inits->numeric = c;
+      if(ruts_string(inits, STATE_BG1)){
+        return -1;
+      }
+      break;
+    case STATE_CSI: // terminated by 0x40--0x7E ('@'--'~')
+      if(c == '?'){
+        inits->state = STATE_DA; // could also be DECRPM/XTSMGRAPHICS
+      }else if(c == '>'){
+        inits->state = STATE_SDA;
+      }else if(isdigit(c)){
+        inits->numeric = 0;
+        if(ruts_numeric(&inits->numeric, c)){
+          return -1;
+        }
+        inits->state = STATE_CURSOR;
+      }else if(c >= 0x40 && c <= 0x7E){
+        inits->state = STATE_NULL;
+      }
+      break;
+    case STATE_CURSOR:
+      if(isdigit(c)){
+        if(ruts_numeric(&inits->numeric, c)){
+          return -1;
+        }
+      }else if(c == ';'){
+        inits->cursor_y = inits->numeric;
+        inits->state = STATE_CURSOR_COL;
+        inits->numeric = 0;
+      }else{
+        inits->state = STATE_NULL;
+      }
+      break;
+    case STATE_CURSOR_COL:
+      if(isdigit(c)){
+        if(ruts_numeric(&inits->numeric, c)){
+          return -1;
+        }
+      }else if(c == 'R'){
+        inits->cursor_x = inits->numeric;
+        inits->state = STATE_NULL;
+      }else{
+        inits->state = STATE_NULL;
+      }
+      break;
+    case STATE_DCS: // terminated by ST
+      if(c == '\\'){
+//fprintf(stderr, "terminated DCS\n");
+        inits->state = STATE_NULL;
+      }else if(c == '1'){
+        inits->state = STATE_XTGETTCAP1;
+        inits->xtgettcap_good = true;
+      }else if(c == '0'){
+        inits->state = STATE_XTGETTCAP1;
+        inits->xtgettcap_good = false;
+      }else if(c == '>'){
+        inits->state = STATE_XTVERSION1;
+      }else if(c == '!'){
+        inits->state = STATE_TDA1;
+      }else{
+        inits->state = STATE_DCS_DRAIN;
+      }
+      break;
+    case STATE_DCS_DRAIN:
+      // we drain to ST, which is an escape, and thus already handled, so...
+      break;
+    case STATE_XTVERSION1:
+      if(c == '|'){
+        inits->state = STATE_XTVERSION2;
+        inits->stridx = 0;
+        inits->runstring[0] = '\0';
+      }else{
+        // FIXME error?
+      }
+      break;
+    case STATE_XTVERSION2:
+      inits->numeric = c;
+      if(ruts_string(inits, STATE_XTVERSION1)){
+        return -1;
+      }
+      break;
+    case STATE_XTGETTCAP1:
+      if(c == '+'){
+        inits->state = STATE_XTGETTCAP2;
+      }else{
+        // FIXME malformed
+      }
+      break;
+    case STATE_XTGETTCAP2:
+      if(c == 'r'){
+        inits->state = STATE_XTGETTCAP3;
+      }else{
+        // FIXME malformed
+      }
+      break;
+    case STATE_XTGETTCAP3:
+      if(c == '='){
+        if(inits->numeric == 0x544e){
+          inits->state = STATE_XTGETTCAP_TERMNAME1;
+          inits->stridx = 0;
+          inits->numeric = 0;
+          inits->runstring[0] = '\0';
+        }else{
+          inits->state = STATE_DCS_DRAIN;
+        }
+      }else if(ruts_hex(&inits->numeric, c)){
+        return -1;
+      }
+      break;
+    case STATE_XTGETTCAP_TERMNAME1:
+      if(ruts_hex(&inits->numeric, c)){
+        return -1;
+      }
+      inits->state = STATE_XTGETTCAP_TERMNAME2;
+      break;
+    case STATE_XTGETTCAP_TERMNAME2:
+      if(ruts_hex(&inits->numeric, c)){
+        return -1;
+      }
+      inits->state = STATE_XTGETTCAP_TERMNAME1;
+      if(ruts_string(inits, STATE_XTGETTCAP_TERMNAME1)){
+        return -1;
+      }
+      inits->numeric = 0;
+      break;
+    case STATE_TDA1:
+      if(c == '|'){
+        inits->state = STATE_TDA2;
+        inits->stridx = 0;
+        inits->runstring[0] = '\0';
+      }else{
+        // FIXME
+      }
+      break;
+    case STATE_TDA2:
+      if(ruts_hex(&inits->numeric, c)){
+        return -1;
+      }
+      inits->state = STATE_TDA3;
+      break;
+    case STATE_TDA3:
+      if(ruts_hex(&inits->numeric, c)){
+        return -1;
+      }
+      inits->state = STATE_TDA2;
+      if(ruts_string(inits, STATE_TDA1)){
+        inits->state = STATE_DCS_DRAIN;
+      }
+      inits->numeric = 0;
+      break;
+    case STATE_SDA:
+      if(c == 'c'){
+        inits->state = STATE_NULL;
+      }
+      break;
+    // primary device attributes and XTSMGRAPHICS replies are generally
+    // indistinguishable until well into the escape. one can get:
+    // XTSMGRAPHICS: CSI ? Pi ; Ps ; Pv S {Pi: 123} {Ps: 0123}
+    // DECRPM: CSI ? Pd ; Ps $ y {Pd: many} {Ps: 01234}
+    // DA: CSI ? 1 ; 2 c  ("VT100 with Advanced Video Option")
+    //     CSI ? 1 ; 0 c  ("VT101 with No Options")
+    //     CSI ? 4 ; 6 c  ("VT132 with Advanced Video and Graphics")
+    //     CSI ? 6 c  ("VT102")
+    //     CSI ? 7 c  ("VT131")
+    //     CSI ? 1 2 ; Ps c  ("VT125")
+    //     CSI ? 6 2 ; Ps c  ("VT220")
+    //     CSI ? 6 3 ; Ps c  ("VT320")
+    //     CSI ? 6 4 ; Ps c  ("VT420")
+    case STATE_DA: // return success on end of DA
+      if(c == '1'){
+        inits->state = STATE_DA_1;
+      }else if(c == '2'){
+        if(ruts_numeric(&inits->numeric, c)){ // stash for DECRPT
+          return -1;
+        }
+        inits->state = STATE_SIXEL;
+      }else if(c == '4' || c == '7'){ // VT132, VT131
+        inits->state = STATE_DA_DRAIN;
+      }else if(c == '6'){
+        inits->state = STATE_DA_6;
+      }else if(c >= 0x40 && c <= 0x7E){
+        inits->state = STATE_NULL;
+      }
+      break;
+    case STATE_DA_1:
+      if(c >= 0x40 && c <= 0x7E){
+        inits->state = STATE_NULL;
+        return 1;
+      }else if(c == ';'){
+        inits->state = STATE_DA_1_SEMI;
+      } // FIXME error?
+      break;
+    case STATE_DA_1_SEMI:
+      if(c == '2'){ // VT100 with Advanced Video Option
+        inits->state = STATE_DA_DRAIN;
+      }else if(c == '0'){
+        inits->state = STATE_DA_1_0;
+      }else if(c >= 0x40 && c <= 0x7E){
+        inits->state = STATE_NULL;
+      } // FIXME error?
+      break;
+    case STATE_DA_1_0:
+      if(c >= 0x40 && c <= 0x7E){
+        inits->state = STATE_NULL;
+      }else if(c == ';'){
+        inits->state = STATE_SIXEL_CREGS;
+      } // FIXME error?
+      break;
+    case STATE_SIXEL_CREGS:
+      if(c == 'S'){
+        inits->tcache->color_registers = inits->numeric;
+        inits->state = STATE_NULL;
+      }else if(ruts_numeric(&inits->numeric, c)){
+        return -1;
+      }
+      break;
+    case STATE_DA_6:
+      if(c >= 0x40 && c <= 0x7E){
+        inits->state = STATE_NULL;
+        return 1;
+      }
+      // FIXME
+      break;
+    case STATE_DA_DRAIN:
+      if(c >= 0x40 && c <= 0x7E){
+        inits->state = STATE_NULL;
+        return 1;
+      }
+      break;
+    case STATE_SIXEL:
+      if(c == ';'){
+        if(inits->numeric == 2026){
+          inits->state = STATE_APPSYNC_REPORT;
+        }else{
+          inits->state = STATE_SIXEL_SEMI1;
+        }
+      }else if(ruts_numeric(&inits->numeric, c)){
+        return -1;
+      }else{
+        // FIXME error?
+      }
+      break;
+    case STATE_SIXEL_SEMI1:
+      if(c == '0'){
+        inits->state = STATE_SIXEL_SUCCESS;
+      }else if(c == '2'){
+        inits->state = STATE_XTSMGRAPHICS_DRAIN;
+      }else{
+        // FIXME error?
+      }
+      break;
+    case STATE_SIXEL_SUCCESS:
+      if(c == ';'){
+        inits->numeric = 0;
+        inits->state = STATE_SIXEL_WIDTH;
+      }else{
+        // FIXME error?
+      }
+      break;
+    case STATE_SIXEL_WIDTH:
+      if(c == ';'){
+        inits->tcache->sixel_maxx = inits->numeric;
+        inits->state = STATE_SIXEL_HEIGHT;
+        inits->numeric = 0;
+      }else if(ruts_numeric(&inits->numeric, c)){
+        return -1;
+      }
+      break;
+    case STATE_SIXEL_HEIGHT:
+      if(c == 'S'){
+        inits->tcache->sixel_maxy_pristine = inits->numeric;
+        inits->state = STATE_NULL;
+      }else if(ruts_numeric(&inits->numeric, c)){
+        return -1;
+      }
+      break;
+    case STATE_XTSMGRAPHICS_DRAIN:
+      if(c == 'S'){
+        inits->state = STATE_NULL;
+      }
+      break;
+    case STATE_APPSYNC_REPORT:
+      if(c == '2'){
+        inits->appsync = 1;
+        inits->state = STATE_APPSYNC_REPORT_DRAIN;
+      }
+      break;
+    case STATE_APPSYNC_REPORT_DRAIN:
+      if(c == 'y'){
+        inits->state = STATE_NULL;
+      }
+      break;
+    default:
+      fprintf(stderr, "Reached invalid init state %d\n", inits->state);
+      return -1;
+  }
+  return 0;
+}
+
+// complete the terminal detection process
+static int
+control_read(int ttyfd, query_state* qstate){
+  unsigned char* buf;
+  ssize_t s;
+
+  if((buf = malloc(BUFSIZ)) == NULL){
+    return -1;
+  }
+  while((s = read(ttyfd, buf, BUFSIZ)) != -1){
+    for(ssize_t idx = 0; idx < s ; ++idx){
+      int r = pump_control_read(qstate, buf[idx]);
+      if(r == 1){ // success!
+        free(buf);
+//fprintf(stderr, "at end, derived terminal %d\n", inits.qterm);
+        return 0;
+      }else if(r < 0){
+        goto err;
+      }
+    }
+  }
+err:
+  fprintf(stderr, "Reading control replies failed on %d (%s)\n", ttyfd, strerror(errno));
+  free(buf);
+  return -1;
+}
+
+int ncinputlayer_init(tinfo* tcache, FILE* infp, queried_terminals_e* detected,
+                      unsigned* appsync, int* cursor_y, int* cursor_x){
+  ncinputlayer* nilayer = &tcache->input;
+  setbuffer(infp, NULL, 0);
+  nilayer->inputescapes = NULL;
+  nilayer->infd = fileno(infp);
+  nilayer->ttyfd = isatty(nilayer->infd) ? -1 : get_tty_fd(infp);
+  if(prep_special_keys(nilayer)){
+    return -1;
+  }
+  nilayer->inputbuf_occupied = 0;
+  nilayer->inputbuf_valid_starts = 0;
+  nilayer->inputbuf_write_at = 0;
+  nilayer->input_events = 0;
+  int csifd = nilayer->ttyfd >= 0 ? nilayer->ttyfd : nilayer->infd;
+  if(isatty(csifd)){
+    query_state inits = {
+      .tcache = tcache,
+      .state = STATE_NULL,
+      .qterm = TERMINAL_UNKNOWN,
+      .cursor_x = -1,
+      .cursor_y = -1,
+    };
+    if(control_read(csifd, &inits)){
+      input_free_esctrie(&nilayer->inputescapes);
+      free(inits.version);
+      return -1;
+    }
+    tcache->bg_collides_default = inits.bg;
+    tcache->termversion = inits.version;
+    *detected = inits.qterm;
+    *appsync = inits.appsync;
+    if(cursor_x){
+      *cursor_x = inits.cursor_x - 1;
+    }
+    if(cursor_y){
+      *cursor_y = inits.cursor_y - 1;
+    }
   }
   return 0;
 }

@@ -24,6 +24,7 @@
 #endif
 #include <netinet/in.h>
 #include <notcurses/nckeys.h>
+#include <notcurses/ncseqs.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -59,7 +60,8 @@ struct nctab;     // grouped item within an nctabbed
 struct nctabbed;  // widget with one tab visible at a time
 
 // we never blit full blocks, but instead spaces (more efficient) with the
-// background set to the desired foreground.
+// background set to the desired foreground. these need be kept in the same
+// order as the blitters[] definition in lib/blit.c.
 typedef enum {
   NCBLIT_DEFAULT, // let the ncvisual pick
   NCBLIT_1x1,     // space, compatible with ASCII
@@ -86,18 +88,16 @@ typedef enum {
 
 // How to scale an ncvisual during rendering. NCSCALE_NONE will apply no
 // scaling. NCSCALE_SCALE scales a visual to the plane's size, maintaining
-// aspect ratio. NCSCALE_INFLATE does the same, but without interpolation.
-// NCSCALE_STRETCH stretches and scales the image in an attempt to fill the
-// entirety of the plane. NCSCALE_NONE_HIRES and NCSCALE_SCALE_HIRES behave
-// like their counterparts, but admit blitters which don't preserve aspect
-// ratio.
+// aspect ratio. NCSCALE_STRETCH stretches and scales the image in an attempt
+// to fill the entirety of the plane. NCSCALE_NONE_HIRES and
+// NCSCALE_SCALE_HIRES behave like their counterparts, but admit blitters
+// which don't preserve aspect ratio.
 typedef enum {
   NCSCALE_NONE,
   NCSCALE_SCALE,
   NCSCALE_STRETCH,
   NCSCALE_NONE_HIRES,
   NCSCALE_SCALE_HIRES,
-  NCSCALE_INFLATE,
 } ncscale_e;
 
 // Returns the number of columns occupied by a multibyte (UTF-8) string, or
@@ -113,10 +113,10 @@ API int notcurses_ucs32_to_utf8(const char32_t* ucs32, unsigned ucs32count,
                                 unsigned char* resultbuf, size_t buflen);
 
 // background cannot be highcontrast, only foreground
-#define CELL_ALPHA_HIGHCONTRAST 0x30000000ull
-#define CELL_ALPHA_TRANSPARENT  0x20000000ull
-#define CELL_ALPHA_BLEND        0x10000000ull
-#define CELL_ALPHA_OPAQUE       0x00000000ull
+#define NCALPHA_HIGHCONTRAST    0x30000000ull
+#define NCALPHA_TRANSPARENT     0x20000000ull
+#define NCALPHA_BLEND           0x10000000ull
+#define NCALPHA_OPAQUE          0x00000000ull
 
 // if this bit is set, we are *not* using the default background color
 #define CELL_BGDEFAULT_MASK     0x0000000040000000ull
@@ -248,7 +248,7 @@ ncchannel_set_alpha(unsigned* channel, unsigned alpha){
     return -1;
   }
   *channel = alpha | (*channel & ~CELL_BG_ALPHA_MASK);
-  if(alpha != CELL_ALPHA_OPAQUE){
+  if(alpha != NCALPHA_OPAQUE){
     *channel |= CELL_BGDEFAULT_MASK;
   }
   return 0;
@@ -261,7 +261,7 @@ ncchannel_set_palindex(uint32_t* channel, int idx){
   }
   *channel |= CELL_BGDEFAULT_MASK;
   *channel |= CELL_BG_PALETTE;
-  ncchannel_set_alpha(channel, CELL_ALPHA_OPAQUE);
+  ncchannel_set_alpha(channel, NCALPHA_OPAQUE);
   *channel &= 0xff000000ull;
   *channel |= idx;
   return 0;
@@ -282,7 +282,7 @@ ncchannel_palindex_p(unsigned channel){
 // Mark the channel as using its default color, which also marks it opaque.
 static inline unsigned
 ncchannel_set_default(unsigned* channel){
-  return *channel &= ~(CELL_BGDEFAULT_MASK | CELL_ALPHA_HIGHCONTRAST);
+  return *channel &= ~(CELL_BGDEFAULT_MASK | NCALPHA_HIGHCONTRAST);
 }
 
 // Extract the 32-bit background channel from a channel pair.
@@ -438,7 +438,7 @@ ncchannels_set_bg_rgb8_clipped(uint64_t* channels, int r, int g, int b){
 // Set the 2-bit alpha component of the background channel.
 static inline int
 ncchannels_set_bg_alpha(uint64_t* channels, unsigned alpha){
-  if(alpha == CELL_ALPHA_HIGHCONTRAST){ // forbidden for background alpha
+  if(alpha == NCALPHA_HIGHCONTRAST){ // forbidden for background alpha
     return -1;
   }
   uint32_t channel = ncchannels_bchannel(*channels);
@@ -593,13 +593,9 @@ typedef struct nccell {
   // are single-byte ASCII-derived values. The XXXXXX is interpreted as a 24-bit
   // index into the egcpool. These pools may thus be up to 16MB.
   //
-  // A pixel graphic is indicated by the value 0x02XXXXXX. This is safe for the
-  // same reasons listed above. The XXXXXX is interpreted as a unique 24-bit
-  // sprixel identifier, and can be used to search the sprixel cache.
-  //
-  // The cost of this scheme is that the characters 0x01 (SOH) and 0x02 (STX)
-  // cannot be encoded in a nccell, which we want anyway. They must not be
-  // allowed through the API, or havoc will result.
+  // The cost of this scheme is that the character 0x01 (SOH) cannot be encoded
+  // in a nccell, which we want anyway. It must not be allowed through the API,
+  // or havoc will result.
   uint32_t gcluster;          // 4B → 4B little endian EGC
   uint8_t gcluster_backstop;  // 1B → 5B (8 bits of zero)
   // we store the column width in this field. for a multicolumn EGC of N
@@ -653,7 +649,7 @@ API int nccell_load(struct ncplane* n, nccell* c, const char* gcluster);
 // nccell_load(), plus blast the styling with 'attr' and 'channels'.
 static inline int
 nccell_prime(struct ncplane* n, nccell* c, const char* gcluster,
-           uint32_t stylemask, uint64_t channels){
+             uint32_t stylemask, uint64_t channels){
   c->stylemask = stylemask;
   c->channels = channels;
   int ret = nccell_load(n, c, gcluster);
@@ -667,17 +663,13 @@ API int nccell_duplicate(struct ncplane* n, nccell* targ, const nccell* c);
 // Release resources held by the nccell 'c'.
 API void nccell_release(struct ncplane* n, nccell* c);
 
-#define NCSTYLE_MASK      0x03ffu
-#define NCSTYLE_STANDOUT  0x0080u
-#define NCSTYLE_UNDERLINE 0x0040u
-#define NCSTYLE_REVERSE   0x0020u
-#define NCSTYLE_BLINK     0x0010u
-#define NCSTYLE_DIM       0x0008u
+#define NCSTYLE_MASK      0xffffu
+#define NCSTYLE_ITALIC    0x0020u
+#define NCSTYLE_UNDERLINE 0x0010u
+#define NCSTYLE_UNDERCURL 0x0008u
 #define NCSTYLE_BOLD      0x0004u
-#define NCSTYLE_INVIS     0x0002u
-#define NCSTYLE_PROTECT   0x0001u
-#define NCSTYLE_ITALIC    0x0100u
-#define NCSTYLE_STRUCK    0x0200u
+#define NCSTYLE_STRUCK    0x0002u
+#define NCSTYLE_BLINK     0x0001u
 #define NCSTYLE_NONE      0
 
 // Set the specified style bits for the nccell 'c', whether they're actively
@@ -748,7 +740,7 @@ nccell_wide_left_p(const nccell* c){
 
 // return a pointer to the NUL-terminated EGC referenced by 'c'. this pointer
 // can be invalidated by any further operation on the plane 'n', so...watch out!
-API const char* nccell_extended_gcluster(const struct ncplane* n, const nccell* c);
+API __attribute__ ((returns_nonnull)) const char* nccell_extended_gcluster(const struct ncplane* n, const nccell* c);
 
 // return the number of columns occupied by 'c'. returns -1 if passed a
 // sprixcell. see ncstrwidth() for an equivalent for multiple EGCs.
@@ -856,7 +848,11 @@ typedef enum {
 // to inhibit registration of these signal handlers.
 #define NCOPTION_NO_QUIT_SIGHANDLERS 0x0008ull
 
-// NCOPTION_RETAIN_CURSOR was removed in 1.6.18. It ought be repurposed. FIXME.
+// Initialize the standard plane's virtual cursor to match the physical cursor
+// at context creation time. Together with NCOPTION_NO_ALTERNATE_SCREEN and a
+// scrolling standard plane, this facilitates easy scrolling-style programs in
+// rendered mode.
+#define NCOPTION_PRESERVE_CURSOR     0x0010ull
 
 // Notcurses typically prints version info in notcurses_init() and performance
 // info in notcurses_stop(). This inhibits that output.
@@ -944,15 +940,15 @@ API int ncpile_rasterize(struct ncplane* n);
 // Renders and rasterizes the standard pile in one shot. Blocking call.
 API int notcurses_render(struct notcurses* nc);
 
-// Perform the rendering and rasterization portion of notcurses_render(), but
-// do not write the resulting buffer out to the terminal. Using this function,
-// the user can control the writeout process, and render a second frame while
-// writing another. The returned buffer must be freed by the caller.
-API int notcurses_render_to_buffer(struct notcurses* nc, char** buf, size_t* buflen);
+// Perform the rendering and rasterization portion of ncpile_render() and
+// ncpile_rasterize(), but do not write the resulting buffer out to the
+// terminal. Using this function, the user can control the writeout process.
+// The returned buffer must be freed by the caller.
+API int ncpile_render_to_buffer(struct ncplane* p, char** buf, size_t* buflen);
 
 // Write the last rendered frame, in its entirety, to 'fp'. If
 // notcurses_render() has not yet been called, nothing will be written.
-API int notcurses_render_to_file(struct notcurses* nc, FILE* fp);
+API int ncpile_render_to_file(struct ncplane* p, FILE* fp);
 
 // Return the topmost ncplane of the standard pile.
 API struct ncplane* notcurses_top(struct notcurses* n);
@@ -1055,6 +1051,11 @@ notcurses_getc_blocking(struct notcurses* n, ncinput* ni){
   return notcurses_getc(n, NULL, &sigmask, ni);
 }
 
+static inline bool
+ncinput_nomod_p(const ncinput* ni){
+  return !ni->alt && !ni->ctrl && !ni->shift;
+}
+
 // Enable the mouse in "button-event tracking" mode with focus detection and
 // UTF8-style extended coordinates. On failure, -1 is returned. On success, 0
 // is returned, and mouse events will be published to notcurses_getc().
@@ -1074,11 +1075,12 @@ API int notcurses_linesigs_enable(struct notcurses* n);
 // Refresh the physical screen to match what was last rendered (i.e., without
 // reflecting any changes since the last call to notcurses_render()). This is
 // primarily useful if the screen is externally corrupted, or if an
-// NCKEY_RESIZE event has been read and you're not yet ready to render.
+// NCKEY_RESIZE event has been read and you're not yet ready to render. The
+// current screen geometry is returned in 'y' and 'x', if they are not NULL.
 API int notcurses_refresh(struct notcurses* n, int* RESTRICT y, int* RESTRICT x);
 
 // Extract the Notcurses context to which this plane is attached.
-API struct notcurses* ncplane_notcurses(struct ncplane* n);
+API struct notcurses* ncplane_notcurses(const struct ncplane* n);
 API const struct notcurses* ncplane_notcurses_const(const struct ncplane* n);
 
 // Return the dimensions of this ncplane.
@@ -1121,11 +1123,9 @@ ncplane_dim_x(const struct ncplane* n){
 
 // Retrieve pixel geometry for the display region ('pxy', 'pxx'), each cell
 // ('celldimy', 'celldimx'), and the maximum displayable bitmap ('maxbmapy',
-// 'maxbmapx'). Note that this will call notcurses_check_pixel_support(),
-// possibly leading to an interrogation of the terminal. If bitmaps are not
-// supported, 'maxbmapy' and 'maxbmapx' will be 0. Any of the geometry
-// arguments may be NULL.
-API void ncplane_pixelgeom(struct ncplane* n, int* RESTRICT pxy, int* RESTRICT pxx,
+// 'maxbmapx'). If bitmaps are not supported, 'maxbmapy' and 'maxbmapx' will
+// be 0. Any of the geometry arguments may be NULL.
+API void ncplane_pixelgeom(const struct ncplane* n, int* RESTRICT pxy, int* RESTRICT pxx,
                            int* RESTRICT celldimy, int* RESTRICT celldimx,
                            int* RESTRICT maxbmapy, int* RESTRICT maxbmapx)
   __attribute__ ((nonnull (1)));
@@ -1209,14 +1209,16 @@ API struct ncplane* ncplane_reparent(struct ncplane* n, struct ncplane* newparen
 // The same as ncplane_reparent(), except any planes bound to 'n' come along
 // with it to its new destination. Their z-order is maintained. If 'newparent'
 // is an ancestor of 'n', NULL is returned, and no changes are made.
-API struct ncplane* ncplane_reparent_family(struct ncplane* n, struct ncplane* newparent);
+API struct ncplane* ncplane_reparent_family(struct ncplane* n, struct ncplane* newparent)
+  __attribute__ ((nonnull (1, 2)));
 
 // Duplicate an existing ncplane. The new plane will have the same geometry,
 // will duplicate all content, and will start with the same rendering state.
 // The new plane will be immediately above the old one on the z axis, and will
 // be bound to the same parent. Bound planes are *not* duplicated; the new
 // plane is bound to the parent of 'n', but has no bound planes.
-API ALLOC struct ncplane* ncplane_dup(const struct ncplane* n, void* opaque);
+API ALLOC struct ncplane* ncplane_dup(const struct ncplane* n, void* opaque)
+  __attribute__ ((nonnull (1)));
 
 // provided a coordinate relative to the origin of 'src', map it to the same
 // absolute coordinate relative to the origin of 'dst'. either or both of 'y'
@@ -1228,34 +1230,117 @@ API void ncplane_translate(const struct ncplane* src, const struct ncplane* dst,
 // within the ncplane 'n'. If not, return false. If so, return true. Either
 // way, translate the absolute coordinates relative to 'n'. If the point is not
 // within 'n', these coordinates will not be within the dimensions of the plane.
-API bool ncplane_translate_abs(const struct ncplane* n, int* RESTRICT y, int* RESTRICT x);
+API bool ncplane_translate_abs(const struct ncplane* n, int* RESTRICT y, int* RESTRICT x)
+  __attribute__ ((nonnull (1)));
 
 // All planes are created with scrolling disabled. Scrolling can be dynamically
 // controlled with ncplane_set_scrolling(). Returns true if scrolling was
 // previously enabled, or false if it was disabled.
-API bool ncplane_set_scrolling(struct ncplane* n, bool scrollp);
+API bool ncplane_set_scrolling(struct ncplane* n, bool scrollp)
+  __attribute__ ((nonnull (1)));
 
-// Capabilities
+API bool ncplane_scrolling_p(const struct ncplane* n)
+  __attribute__ ((nonnull (1)));
+
+// Palette API. Some terminals only support 256 colors, but allow the full
+// palette to be specified with arbitrary RGB colors. In all cases, it's more
+// performant to use indexed colors, since it's much less data to write to the
+// terminal. If you can limit yourself to 256 colors, that's probably best.
+
+typedef struct ncpalette {
+  uint32_t chans[NCPALETTESIZE]; // RGB values as regular ol' channels
+} ncpalette;
+
+// Create a new palette store. It will be initialized with notcurses' best
+// knowledge of the currently configured palette. The palette upon startup
+// cannot be reliably detected, sadly.
+API ALLOC ncpalette* ncpalette_new(struct notcurses* nc);
+
+// Attempt to configure the terminal with the provided palette 'p'. Does not
+// transfer ownership of 'p'; ncpalette_free() can (ought) still be called.
+API int ncpalette_use(struct notcurses* nc, const ncpalette* p);
+
+// Manipulate entries in the palette store 'p'. These are *not* locked.
+static inline int
+ncpalette_set_rgb8(ncpalette* p, int idx, int r, int g, int b){
+  if(idx < 0 || (size_t)idx > sizeof(p->chans) / sizeof(*p->chans)){
+    return -1;
+  }
+  return ncchannel_set_rgb8(&p->chans[idx], r, g, b);
+}
+
+static inline int
+ncpalette_set(ncpalette* p, int idx, unsigned rgb){
+  if(idx < 0 || (size_t)idx > sizeof(p->chans) / sizeof(*p->chans)){
+    return -1;
+  }
+  return ncchannel_set(&p->chans[idx], rgb);
+}
+
+static inline int
+ncpalette_get_rgb8(const ncpalette* p, int idx, unsigned* RESTRICT r, unsigned* RESTRICT g, unsigned* RESTRICT b){
+  if(idx < 0 || (size_t)idx > sizeof(p->chans) / sizeof(*p->chans)){
+    return -1;
+  }
+  return ncchannel_rgb8(p->chans[idx], r, g, b);
+}
+
+// Free the palette store 'p'.
+API void ncpalette_free(ncpalette* p);
+
+// Capabilities, derived from terminfo, environment variables, and queries
+typedef struct nccapabilities {
+  unsigned colors;        // size of palette for indexed colors
+  bool utf8;              // are we using utf-8 encoding? from nl_langinfo(3)
+  bool rgb;               // 24bit color? COLORTERM/heuristics/terminfo 'rgb'
+  bool can_change_colors; // can we change the palette? terminfo 'ccc'
+  // these are assigned wholly through TERM- and query-based heuristics
+  bool quadrants; // do we have (good, vetted) Unicode 1 quadrant support?
+  bool sextants;  // do we have (good, vetted) Unicode 13 sextant support?
+  bool braille;   // do we have Braille support? (linux console does not)
+} nccapabilities;
 
 // Returns a 16-bit bitmask of supported curses-style attributes
 // (NCSTYLE_UNDERLINE, NCSTYLE_BOLD, etc.) The attribute is only
 // indicated as supported if the terminal can support it together with color.
 // For more information, see the "ncv" capability in terminfo(5).
-API unsigned notcurses_supported_styles(const struct notcurses* nc);
+API unsigned notcurses_supported_styles(const struct notcurses* nc)
+  __attribute__ ((nonnull (1)));
 
 // Returns the number of simultaneous colors claimed to be supported, or 1 if
 // there is no color support. Note that several terminal emulators advertise
 // more colors than they actually support, downsampling internally.
-API unsigned notcurses_palette_size(const struct notcurses* nc);
+API unsigned notcurses_palette_size(const struct notcurses* nc)
+  __attribute__ ((nonnull (1)));
+
+API const char* notcurses_detected_terminal(const struct notcurses* nc)
+  __attribute__ ((nonnull (1)));
 
 // Can we directly specify RGB values per cell, or only use palettes?
-API bool notcurses_cantruecolor(const struct notcurses* nc);
+API bool notcurses_cantruecolor(const struct notcurses* nc)
+  __attribute__ ((nonnull (1)));
 
 // Can we fade? Fading requires either the "rgb" or "ccc" terminfo capability.
-API bool notcurses_canfade(const struct notcurses* nc);
+API bool notcurses_canfade(const struct notcurses* nc)
+  __attribute__ ((nonnull (1)));
 
-// Can we set the "hardware" palette? Requires the "ccc" terminfo capability.
-API bool notcurses_canchangecolor(const struct notcurses* nc);
+// Can we set the "hardware" palette? Requires the "ccc" terminfo capability,
+// and that the number of colors supported is at least the size of our
+// ncpalette structure.
+static inline bool
+nccapability_canchangecolor(const nccapabilities* caps){
+  if(!caps->can_change_colors){
+    return false;
+  }
+  ncpalette* p;
+  if(caps->colors < sizeof(p->chans) / sizeof(*p->chans)){
+    return false;
+  }
+  return true;
+}
+
+API bool notcurses_canchangecolor(const struct notcurses* nc)
+  __attribute__ ((nonnull (1)));
 
 // Can we load images? This requires being built against FFmpeg/OIIO.
 API bool notcurses_canopen_images(const struct notcurses* nc);
@@ -1264,24 +1349,28 @@ API bool notcurses_canopen_images(const struct notcurses* nc);
 API bool notcurses_canopen_videos(const struct notcurses* nc);
 
 // Is our encoding UTF-8? Requires LANG being set to a UTF8 locale.
-API bool notcurses_canutf8(const struct notcurses* nc);
+API bool notcurses_canutf8(const struct notcurses* nc)
+  __attribute__ ((nonnull (1)));
 
 // Can we reliably use Unicode halfblocks?
-API bool notcurses_canhalfblock(const struct notcurses* nc);
+API bool notcurses_canhalfblock(const struct notcurses* nc)
+  __attribute__ ((nonnull (1)));
 
 // Can we reliably use Unicode quadrants?
-API bool notcurses_canquadrant(const struct notcurses* nc);
+API bool notcurses_canquadrant(const struct notcurses* nc)
+  __attribute__ ((nonnull (1)));
 
 // Can we reliably use Unicode 13 sextants?
-API bool notcurses_cansextant(const struct notcurses* nc);
+API bool notcurses_cansextant(const struct notcurses* nc)
+  __attribute__ ((nonnull (1)));
 
 // Can we reliably use Unicode Braille?
-API bool notcurses_canbraille(const struct notcurses* nc);
+API bool notcurses_canbraille(const struct notcurses* nc)
+  __attribute__ ((nonnull (1)));
 
-// This function must successfully return before NCBLIT_PIXEL is available.
-// Returns -1 on error, 0 for no support, or 1 if pixel output is supported.
-// Must not be called concurrently with either input or rasterization.
-API int notcurses_check_pixel_support(struct notcurses* nc);
+// Can we blit pixel-accurate bitmaps?
+API int notcurses_check_pixel_support(const struct notcurses* nc)
+  __attribute__ ((nonnull (1)));
 
 // whenever a new field is added here, ensure we add the proper rule to
 // notcurses_stats_reset(), so that values are preserved in the stash stats.
@@ -1310,6 +1399,7 @@ typedef struct ncstats {
   uint64_t defaultelisions;  // default color was emitted
   uint64_t defaultemissions; // default color was elided
   uint64_t refreshes;        // refresh requests (non-optimized redraw)
+  uint64_t appsync_updates;  // how many application-synchronized updates?
 
   // current state -- these can decrease
   uint64_t fbbytes;          // total bytes devoted to all active framebuffers
@@ -1321,6 +1411,7 @@ typedef struct ncstats {
   int64_t raster_min_ns;     // min ns spent in raster for a frame
   uint64_t sprixelemissions; // sprixel draw count
   uint64_t sprixelelisions;  // sprixel elision count
+  uint64_t sprixelbytes;     // sprixel bytes emitted
 } ncstats;
 
 // Allocate an ncstats object. Use this rather than allocating your own, since
@@ -1359,6 +1450,9 @@ API int ncplane_resize(struct ncplane* n, int keepy, int keepx, int keepleny,
 // shrinking in some dimension). Keep the origin where it is.
 static inline int
 ncplane_resize_simple(struct ncplane* n, int ylen, int xlen){
+  if(ylen < 0 || xlen < 0){
+    return -1;
+  }
   int oldy, oldx;
   ncplane_dim_yx(n, &oldy, &oldx); // current dimensions of 'n'
   int keepleny = oldy > ylen ? ylen : oldy;
@@ -1380,6 +1474,7 @@ API int ncplane_set_base_cell(struct ncplane* n, const nccell* c);
 // Set the ncplane's base nccell. It will be used for purposes of rendering
 // anywhere that the ncplane's gcluster is 0. Note that the base cell is not
 // affected by ncplane_erase(). 'egc' must be an extended grapheme cluster.
+// Returns the number of bytes copied out of 'gcluster', or -1 on failure.
 API int ncplane_set_base(struct ncplane* n, const char* egc,
                          uint32_t stylemask, uint64_t channels);
 
@@ -1462,20 +1557,26 @@ API int ncplane_at_cursor_cell(struct ncplane* n, nccell* c);
 
 // Retrieve the current contents of the specified cell. The EGC is returned, or
 // NULL on error. This EGC must be free()d by the caller. The stylemask and
-// channels are written to 'stylemask' and 'channels', respectively.
+// channels are written to 'stylemask' and 'channels', respectively. The return
+// represents how the cell will be used during rendering, and thus integrates
+// any base cell where appropriate. If called upon the secondary columns of a
+// wide glyph, the EGC will be returned (i.e. this function does not distinguish
+// between the primary and secondary columns of a wide glyph).
 API char* ncplane_at_yx(const struct ncplane* n, int y, int x,
                         uint16_t* stylemask, uint64_t* channels);
 
 // Retrieve the current contents of the specified cell into 'c'. This cell is
 // invalidated if the associated plane is destroyed. Returns the number of
-// bytes in the EGC, or -1 on error.
+// bytes in the EGC, or -1 on error. Unlike ncplane_at_yx(), when called upon
+// the secondary columns of a wide glyph, the return can be distinguished from
+// the primary column (nccell_wide_right_p(c) will return true).
 API int ncplane_at_yx_cell(struct ncplane* n, int y, int x, nccell* c);
 
 // Create a flat string from the EGCs of the selected region of the ncplane
 // 'n'. Start at the plane's 'begy'x'begx' coordinate (which must lie on the
 // plane), continuing for 'leny'x'lenx' cells. Either or both of 'leny' and
 // 'lenx' can be specified as -1 to go through the boundary of the plane.
-API char* ncplane_contents(const struct ncplane* n, int begy, int begx,
+API char* ncplane_contents(struct ncplane* n, int begy, int begx,
                            int leny, int lenx);
 
 // Manipulate the opaque user pointer associated with this plane.
@@ -1510,11 +1611,6 @@ notcurses_align(int availu, ncalign_e align, int u){
 static inline int
 ncplane_halign(const struct ncplane* n, ncalign_e align, int c){
   return notcurses_align(ncplane_dim_x(n), align, c);
-}
-
-__attribute__ ((deprecated)) static inline int
-ncplane_align(const struct ncplane* n, ncalign_e align, int c){
-  return ncplane_halign(n, align, c);
 }
 
 // Return the row at which 'r' rows ought start in order to be aligned
@@ -1958,8 +2054,8 @@ API int ncplane_format(struct ncplane* n, int ystop, int xstop, uint32_t stylema
 API int ncplane_stain(struct ncplane* n, int ystop, int xstop, uint64_t ul,
                       uint64_t ur, uint64_t ll, uint64_t lr);
 
-// If 'src' does not intersect with 'dst', 'dst' will not be changed, but it is
-// not an error. If 'dst' is NULL, the operation will target the standard plane.
+// Merge the entirety of 'src' down onto the ncplane 'dst'. If 'src' does not
+// intersect with 'dst', 'dst' will not be changed, but it is not an error.
 API int ncplane_mergedown_simple(struct ncplane* RESTRICT src,
                                  struct ncplane* RESTRICT dst);
 
@@ -2303,6 +2399,30 @@ API int nccells_rounded_box(struct ncplane* n, uint32_t styles, uint64_t channel
                             nccell* lr, nccell* hl, nccell* vl);
 
 static inline int
+nccells_ascii_box(struct ncplane* n, uint32_t attr, uint64_t channels,
+                  nccell* ul, nccell* ur, nccell* ll, nccell* lr, nccell* hl, nccell* vl){
+  return nccells_load_box(n, attr, channels, ul, ur, ll, lr, hl, vl, NCBOXASCII);
+}
+
+static inline int
+nccells_light_box(struct ncplane* n, uint32_t attr, uint64_t channels,
+                  nccell* ul, nccell* ur, nccell* ll, nccell* lr, nccell* hl, nccell* vl){
+  if(notcurses_canutf8(ncplane_notcurses(n))){
+    return nccells_load_box(n, attr, channels, ul, ur, ll, lr, hl, vl, NCBOXLIGHT);
+  }
+  return nccells_ascii_box(n, attr, channels, ul, ur, ll, lr, hl, vl);
+}
+
+static inline int
+nccells_heavy_box(struct ncplane* n, uint32_t attr, uint64_t channels,
+                  nccell* ul, nccell* ur, nccell* ll, nccell* lr, nccell* hl, nccell* vl){
+  if(notcurses_canutf8(ncplane_notcurses(n))){
+    return nccells_load_box(n, attr, channels, ul, ur, ll, lr, hl, vl, NCBOXHEAVY);
+  }
+  return nccells_ascii_box(n, attr, channels, ul, ur, ll, lr, hl, vl);
+}
+
+static inline int
 ncplane_rounded_box(struct ncplane* n, uint32_t styles, uint64_t channels,
                     int ystop, int xstop, unsigned ctlword){
   int ret = 0;
@@ -2417,7 +2537,21 @@ API ALLOC struct ncvisual* ncvisual_from_file(const char* file);
 API ALLOC struct ncvisual* ncvisual_from_rgba(const void* rgba, int rows,
                                               int rowstride, int cols);
 
-// ncvisual_from_rgba(), but 'bgra' is arranged as BGRA.
+// ncvisual_from_rgba(), but the pixels are 3-byte RGB. A is filled in
+// throughout using 'alpha'.
+API ALLOC struct ncvisual* ncvisual_from_rgb_packed(const void* rgba, int rows,
+                                                    int rowstride, int cols,
+                                                    int alpha);
+
+// ncvisual_from_rgba(), but the pixels are 4-byte RGBx. A is filled in
+// throughout using 'alpha'. rowstride must be a multiple of 4.
+API ALLOC struct ncvisual* ncvisual_from_rgb_loose(const void* rgba, int rows,
+                                                   int rowstride, int cols,
+                                                   int alpha);
+
+// ncvisual_from_rgba(), but 'bgra' is arranged as BGRA. note that this is a
+// byte-oriented layout, despite being bunched in 32-bit pixels; the lowest
+// memory address ought be B, and A is reached by adding 3 to that address.
 API ALLOC struct ncvisual* ncvisual_from_bgra(const void* bgra, int rows,
                                               int rowstride, int cols);
 
@@ -2431,12 +2565,14 @@ API ALLOC struct ncvisual* ncvisual_from_plane(const struct ncplane* n,
                                                int begy, int begx,
                                                int leny, int lenx);
 
-#define NCVISUAL_OPTION_NODEGRADE  0x0001ull // fail rather than degrade
-#define NCVISUAL_OPTION_BLEND      0x0002ull // use CELL_ALPHA_BLEND with visual
-#define NCVISUAL_OPTION_HORALIGNED 0x0004ull // x is an alignment, not absolute
-#define NCVISUAL_OPTION_VERALIGNED 0x0008ull // y is an alignment, not absolute
-#define NCVISUAL_OPTION_ADDALPHA   0x0010ull // transcolor is in effect
-#define NCVISUAL_OPTION_CHILDPLANE 0x0020ull // interpret n as parent
+#define NCVISUAL_OPTION_NODEGRADE     0x0001ull // fail rather than degrade
+#define NCVISUAL_OPTION_BLEND         0x0002ull // use NCALPHA_BLEND with visual
+#define NCVISUAL_OPTION_HORALIGNED    0x0004ull // x is an alignment, not absolute
+#define NCVISUAL_OPTION_VERALIGNED    0x0008ull // y is an alignment, not absolute
+#define NCVISUAL_OPTION_ADDALPHA      0x0010ull // transcolor is in effect
+#define NCVISUAL_OPTION_CHILDPLANE    0x0020ull // interpret n as parent
+#define NCVISUAL_OPTION_NOINTERPOLATE 0x0040ull // non-interpolative scaling
+                                                // 0x0080 is used internally
 
 struct ncvisual_options {
   // if no ncplane is provided, one will be created using the exact size
@@ -2517,9 +2653,9 @@ API int ncvisual_rotate(struct ncvisual* n, double rads)
 API int ncvisual_resize(struct ncvisual* n, int rows, int cols)
   __attribute__ ((nonnull (1)));
 
-// Inflate each pixel in the image to 'scale'x'scale' pixels. It is an error
-// if 'scale' is less than 1. The original color is retained.
-API int ncvisual_inflate(struct ncvisual* n, int scale)
+// Scale the visual to 'rows' X 'columns' pixels, using non-interpolative
+// (naive) scaling. No new colors will be introduced as a result.
+API int ncvisual_resize_noninterpolative(struct ncvisual* n, int rows, int cols)
   __attribute__ ((nonnull (1)));
 
 // Polyfill at the specified location within the ncvisual 'n', using 'rgba'.
@@ -2621,8 +2757,7 @@ API int ncblit_rgba(const void* data, int linesize,
 API int ncblit_bgrx(const void* data, int linesize,
                     const struct ncvisual_options* vopts);
 
-// Supply an alpha value [0..255] to be applied throughout. linesize must be
-// a multiple of 3 for this RGB data.
+// Supply an alpha value [0..255] to be applied throughout.
 API int ncblit_rgb_packed(const void* data, int linesize,
                           const struct ncvisual_options* vopts, int alpha);
 
@@ -2638,8 +2773,8 @@ API int ncblit_rgb_loose(const void* data, int linesize,
 // Per libav, we "store as BGRA on little-endian, and ARGB on big-endian".
 // This is an RGBA *byte-order* scheme. libav emits bytes, not words. Those
 // bytes are R-G-B-A. When read as words, on little endian this will be ABGR,
-// and on big-endian this will be RGBA. force everything to LE ABGR, a no-op on
-// and thus favoring little-endian. Take that, big-endian mafia!
+// and on big-endian this will be RGBA. force everything to LE ABGR, a no-op
+// on (and thus favoring) little-endian. Take that, big-endian mafia!
 
 // Extract the 8-bit alpha component from a pixel
 static inline unsigned
@@ -2904,55 +3039,16 @@ bprefix(uintmax_t val, uintmax_t decimal, char* buf, int omitdec){
 
 // Enable or disable the terminal's cursor, if supported, placing it at
 // 'y', 'x'. Immediate effect (no need for a call to notcurses_render()).
-// It is an error if 'y', 'x' lies outside the standard plane.
+// It is an error if 'y', 'x' lies outside the standard plane. Can be
+// called while already visible to move the cursor.
 API int notcurses_cursor_enable(struct notcurses* nc, int y, int x);
+
+// Get the current location of the terminal's cursor, whether visible or not.
+API int notcurses_cursor_yx(struct notcurses* nc, int* y, int* x);
+
+// Disable the hardware cursor. It is an error to call this while the
+// cursor is already disabled.
 API int notcurses_cursor_disable(struct notcurses* nc);
-
-// Palette API. Some terminals only support 256 colors, but allow the full
-// palette to be specified with arbitrary RGB colors. In all cases, it's more
-// performant to use indexed colors, since it's much less data to write to the
-// terminal. If you can limit yourself to 256 colors, that's probably best.
-
-typedef struct ncpalette {
-  uint32_t chans[NCPALETTESIZE]; // RGB values as regular ol' channels
-} ncpalette;
-
-// Create a new palette store. It will be initialized with notcurses' best
-// knowledge of the currently configured palette. The palette upon startup
-// cannot be reliably detected, sadly.
-API ALLOC ncpalette* ncpalette_new(struct notcurses* nc);
-
-// Attempt to configure the terminal with the provided palette 'p'. Does not
-// transfer ownership of 'p'; palette256_free() can (ought) still be called.
-API int ncpalette_use(struct notcurses* nc, const ncpalette* p);
-
-// Manipulate entries in the palette store 'p'. These are *not* locked.
-static inline int
-ncpalette_set_rgb8(ncpalette* p, int idx, int r, int g, int b){
-  if(idx < 0 || (size_t)idx > sizeof(p->chans) / sizeof(*p->chans)){
-    return -1;
-  }
-  return ncchannel_set_rgb8(&p->chans[idx], r, g, b);
-}
-
-static inline int
-ncpalette_set(ncpalette* p, int idx, unsigned rgb){
-  if(idx < 0 || (size_t)idx > sizeof(p->chans) / sizeof(*p->chans)){
-    return -1;
-  }
-  return ncchannel_set(&p->chans[idx], rgb);
-}
-
-static inline int
-ncpalette_get_rgb8(const ncpalette* p, int idx, unsigned* RESTRICT r, unsigned* RESTRICT g, unsigned* RESTRICT b){
-  if(idx < 0 || (size_t)idx > sizeof(p->chans) / sizeof(*p->chans)){
-    return -1;
-  }
-  return ncchannel_rgb8(p->chans[idx], r, g, b);
-}
-
-// Free the palette store 'p'.
-API void ncpalette_free(ncpalette* p);
 
 // Convert the plane's content to greyscale.
 API void ncplane_greyscale(struct ncplane* n);
@@ -3729,12 +3825,12 @@ API void ncreader_destroy(struct ncreader* n, char** contents);
 API void notcurses_debug(const struct notcurses* nc, FILE* debugfp)
   __attribute__ ((nonnull (1, 2)));
 
-// Dump selected configuration capabilities to 'debugfp'. Output is freeform,
-// newline-delimited, and subject to change.
-API void notcurses_debug_caps(const struct notcurses* nc, FILE* debugfp)
-  __attribute__ ((nonnull (1, 2)));
-
 // DEPRECATED MATERIAL, GOING AWAY IN ABI3
+
+__attribute__ ((deprecated)) static inline int
+ncplane_align(const struct ncplane* n, ncalign_e align, int c){
+  return ncplane_halign(n, align, c);
+}
 
 __attribute__ ((deprecated)) static inline void
 cell_init(nccell* c){
@@ -4249,9 +4345,32 @@ channels_set_bg_default(uint64_t* channels){
   return ncchannels_set_bg_default(channels);
 }
 
-typedef ncpalette palette256;
+// Inflate each pixel in the image to 'scale'x'scale' pixels. It is an error
+// if 'scale' is less than 1. The original color is retained.
+// Deprecated; use ncvisual_resize_noninterpolative(), which this now wraps.
+API __attribute__ ((deprecated)) int ncvisual_inflate(struct ncvisual* n, int scale)
+  __attribute__ ((nonnull (1)));
+
+API int notcurses_render_to_buffer(struct notcurses* nc, char** buf, size_t* buflen)
+  __attribute__ ((deprecated));
+
+API int notcurses_render_to_file(struct notcurses* nc, FILE* fp)
+  __attribute__ ((deprecated));
 
 typedef nccell cell; // FIXME backwards-compat, remove in ABI3
+
+API void notcurses_debug_caps(const struct notcurses* nc, FILE* debugfp)
+  __attribute__ ((deprecated)) __attribute__ ((nonnull (1, 2)));
+
+#define CELL_ALPHA_HIGHCONTRAST NCALPHA_HIGHCONTRAST
+#define CELL_ALPHA_TRANSPARENT  NCALPHA_TRANSPARENT
+#define CELL_ALPHA_BLEND        NCALPHA_BLEND
+#define CELL_ALPHA_OPAQUE       NCALPHA_OPAQUE
+#define NCSTYLE_PROTECT   0x0001u
+#define NCSTYLE_STANDOUT  0x0080u
+#define NCSTYLE_REVERSE   0x0020u
+#define NCSTYLE_INVIS     0x0002u
+#define NCSTYLE_DIM       0x0008u
 
 #undef ALLOC
 #undef API

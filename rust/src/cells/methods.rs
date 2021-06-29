@@ -1,8 +1,8 @@
 //! `NcCell` methods and associated functions.
 
 use crate::{
-    cstring, error, nccell_load, NcAlphaBits, NcCell, NcChannelPair, NcColor, NcEgc, NcEgcBackstop,
-    NcPaletteIndex, NcPlane, NcResult, NcRgb, NcStyleMask, NCRESULT_ERR,
+    cstring, error, nccell_load, NcAlphaBits, NcCell, NcChannels, NcComponent, NcEgcBackstop,
+    NcPaletteIndex, NcPlane, NcResult, NcRgb, NcStyle, NCRESULT_ERR,
 };
 
 #[allow(unused_imports)] // for the doc comments
@@ -10,44 +10,44 @@ use crate::NcChannel;
 
 /// # NcCell constructors
 impl NcCell {
-    /// New NcCell, expects a 7-bit [char].
+    /// New `NcCell`, expects a 7-bit [`char`].
     #[inline]
     #[allow(clippy::unnecessary_cast)]
-    pub const fn with_char7b(ch: char) -> Self {
+    pub const fn from_char7b(ch: char) -> Self {
         NcCell {
             gcluster: (ch as u32).to_le(),
             gcluster_backstop: 0 as NcEgcBackstop,
             width: 0_u8,
-            stylemask: 0 as NcStyleMask,
-            channels: 0 as NcChannelPair,
+            stylemask: 0 as NcStyle,
+            channels: 0 as NcChannels,
         }
     }
 
-    /// New NcCell, expects an [NcPlane] and a [char].
+    /// New `NcCell`, expects an [`NcPlane`] and a [`char`].
     #[inline]
-    pub fn with_char(ch: char, plane: &mut NcPlane) -> Self {
+    pub fn from_char(ch: char, plane: &mut NcPlane) -> Self {
         let mut cell = Self::new();
         let result = unsafe { nccell_load(plane, &mut cell, cstring![ch.to_string()]) };
         debug_assert_ne![NCRESULT_ERR, result];
         cell
     }
 
-    /// New NcCell, expects an [NcPlane] and a &[str].
+    /// New `NcCell`, expects an [`NcPlane`] and a &[`str`].
     #[inline]
-    pub fn with_str(plane: &mut NcPlane, string: &str) -> Self {
+    pub fn from_str(plane: &mut NcPlane, string: &str) -> Self {
         let mut cell = Self::new();
         let result = unsafe { nccell_load(plane, &mut cell, cstring![string]) };
         debug_assert_ne![NCRESULT_ERR, result];
         cell
     }
 
-    /// New empty NcCell.
+    /// New empty `NcCell`.
     #[inline]
     pub const fn new() -> Self {
-        Self::with_char7b(0 as char)
+        Self::from_char7b(0 as char)
     }
 
-    /// Breaks the UTF-8 string in `egc` down, setting up this NcCell,
+    /// Breaks the UTF-8 string in `egc` down, setting up this `NcCell`,
     /// and returns the number of bytes copied out of `egc`.
     ///
     /// The styling of the cell is left untouched, but any resources are released.
@@ -74,14 +74,14 @@ impl NcCell {
         plane: &mut NcPlane,
         cell: &mut NcCell,
         gcluster: &str,
-        style: NcStyleMask,
-        channels: NcChannelPair,
+        style: NcStyle,
+        channels: NcChannels,
     ) -> NcResult<u32> {
         let bytes = crate::nccell_prime(plane, cell, gcluster, style, channels);
         error![bytes, "", bytes as u32]
     }
 
-    /// Duplicate this NcCell into another one.
+    /// Duplicate this `NcCell` into another one.
     ///
     /// Both must be or will be bound to `common_plane`.
     ///
@@ -90,7 +90,7 @@ impl NcCell {
         error![unsafe { crate::nccell_duplicate(common_plane, target, self) }]
     }
 
-    /// Initializes (zeroes out) the NcCell.
+    /// Initializes (zeroes out) this `NcCell`.
     ///
     /// *C style function: [nccell_init()][crate::nccell_init].*
     #[inline]
@@ -111,254 +111,254 @@ impl NcCell {
 // -----------------------------------------------------------------------------
 /// ## NcCell methods: bg|fg `NcChannel`s manipulation.
 impl NcCell {
-    /// Returns the [NcChannelPair] of the NcCell.
+    /// Returns the [`NcChannels`] of this `NcCell`.
     ///
     /// *(No equivalent C style function)*
-    pub fn channels(&mut self, plane: &mut NcPlane) -> NcChannelPair {
+    pub fn channels(&mut self, plane: &mut NcPlane) -> NcChannels {
         let (mut _styles, mut channels) = (0, 0);
         let _char = crate::nccell_extract(plane, self, &mut _styles, &mut channels);
         channels
     }
 
-    /// Extracts the background [NcAlphaBits] (shifted to LSBs).
+    /// Extracts the background [`NcAlphaBits`] (shifted to LSBs).
     ///
     /// *C style function: [nccell_bg_alpha()][crate::nccell_bg_alpha].*
     pub fn bg_alpha(&self) -> NcAlphaBits {
         crate::nccell_bg_alpha(self)
     }
 
-    /// Is the background [NcChannel] using the "default background color"?
+    /// Is the background [`NcChannel`] using the "default background color"?
     ///
     /// *C style function: [nccell_bg_default_p()][crate::nccell_bg_default_p].*
     pub fn bg_default_p(&self) -> bool {
         crate::nccell_bg_default_p(self)
     }
 
-    /// Gets the [NcPaletteIndex] of the background [NcChannel].
+    /// Gets the [`NcPaletteIndex`] of the background [`NcChannel`].
     ///
     /// *C style function: [nccell_bg_palindex()][crate::nccell_bg_palindex].*
     pub fn bg_palindex(&self) -> NcPaletteIndex {
         crate::nccell_bg_palindex(self)
     }
 
-    /// Is the background [NcChannel] using an [NcPaletteIndex] indexed
-    /// [NcPalette][crate::NcPalette] color?
+    /// Is the background [`NcChannel`] using an [`NcPaletteIndex`] indexed
+    /// [`NcPalette`][crate::NcPalette] color?
     ///
     /// *C style function: [nccell_bg_palindex_p()][crate::nccell_bg_palindex_p].*
     pub fn bg_palindex_p(&self) -> bool {
         crate::nccell_bg_palindex_p(self)
     }
 
-    /// Gets the background [NcRgb] (shifted to LSBs).
+    /// Gets the background [`NcRgb`] (shifted to LSBs).
     ///
     /// *C style function: [nccell_bg_rgb()][crate::nccell_bg_rgb].*
     pub fn bg_rgb(&self) -> NcRgb {
         crate::nccell_bg_rgb(self)
     }
 
-    /// Gets the background [NcColor] RGB components.
+    /// Gets the background RGB [`NcComponent`]s.
     ///
     /// *C style function: [nccell_bg_rgb8()][crate::nccell_bg_rgb8].*
-    pub fn bg_rgb8(&self) -> (NcColor, NcColor, NcColor) {
+    pub fn bg_rgb8(&self) -> (NcComponent, NcComponent, NcComponent) {
         let (mut r, mut g, mut b) = (0, 0, 0);
         crate::nccell_bg_rgb8(self, &mut r, &mut g, &mut b);
         (r, g, b)
     }
 
-    /// Extracts the foreground [NcAlphaBits] (shifted to LSBs).
+    /// Extracts the foreground [`NcAlphaBits`] (shifted to LSBs).
     ///
     /// *C style function: [nccell_fg_alpha()][crate::nccell_fg_alpha].*
     pub fn fg_alpha(&self) -> NcAlphaBits {
         crate::nccell_fg_alpha(self)
     }
 
-    /// Is the foreground [NcChannel] using the "default foreground color"?
+    /// Is the foreground [`NcChannel`] using the "default foreground color"?
     ///
     /// *C style function: [nccell_fg_default_p()][crate::nccell_fg_default_p].*
     pub fn fg_default_p(&self) -> bool {
         crate::nccell_fg_default_p(self)
     }
 
-    /// Gets the [NcPaletteIndex] of the foreground [NcChannel].
+    /// Gets the [`NcPaletteIndex`] of the foreground [`NcChannel`].
     ///
     /// *C style function: [nccell_fg_palindex()][crate::nccell_fg_palindex].*
     pub fn fg_palindex(&self) -> NcPaletteIndex {
         crate::nccell_fg_palindex(self)
     }
 
-    /// Is the foreground [NcChannel] using an [NcPaletteIndex] indexed
-    /// [NcPalette][crate::NcPalette] color?
+    /// Is the foreground [`NcChannel`] using an [`NcPaletteIndex`] indexed
+    /// [`NcPalette`][crate::NcPalette] color?
     ///
     /// *C style function: [nccell_fg_palindex_p()][crate::nccell_fg_palindex_p].*
     pub fn fg_palindex_p(&self) -> bool {
         crate::nccell_fg_palindex_p(self)
     }
 
-    /// Gets the foreground [NcRgb] (shifted to LSBs).
+    /// Gets the foreground [`NcRgb`] (shifted to LSBs).
     ///
     /// *C style function: [nccell_fg_rgb()][crate::nccell_fg_rgb].*
     pub fn fg_rgb(&self) -> NcRgb {
         crate::nccell_fg_rgb(self)
     }
 
-    /// Gets the foreground [NcColor] RGB components.
+    /// Gets the foreground RGB [`NcComponent`]s.
     ///
     /// *C style function: [nccell_fg_rgb8()][crate::nccell_fg_rgb8].*
-    pub fn fg_rgb8(&self) -> (NcColor, NcColor, NcColor) {
+    pub fn fg_rgb8(&self) -> (NcComponent, NcComponent, NcComponent) {
         let (mut r, mut g, mut b) = (0, 0, 0);
         crate::nccell_fg_rgb8(self, &mut r, &mut g, &mut b);
         (r, g, b)
     }
 
-    /// Sets the background [NcAlphaBits].
+    /// Sets the background [`NcAlphaBits`].
     ///
     /// *C style function: [nccell_set_bg_alpha()][crate::nccell_set_bg_alpha].*
     pub fn set_bg_alpha(&mut self, alpha: NcAlphaBits) {
         crate::nccell_set_bg_alpha(self, alpha);
     }
 
-    /// Indicates to use the "default color" for the background [NcChannel].
+    /// Indicates to use the "default color" for the background [`NcChannel`].
     ///
     /// *C style function: [nccell_set_bg_default()][crate::nccell_set_bg_default].*
     pub fn set_bg_default(&mut self) {
         crate::nccell_set_bg_default(self);
     }
 
-    /// Sets the background [NcPaletteIndex].
+    /// Sets the background [`NcPaletteIndex`].
     ///
-    /// Also sets [NCCELL_BG_PALETTE][crate::NCCELL_BG_PALETTE] and
-    /// [NCCELL_ALPHA_OPAQUE][crate::NCCELL_ALPHA_OPAQUE], and clears out
-    /// [NCCELL_BGDEFAULT_MASK][crate::NCCELL_BGDEFAULT_MASK].
+    /// Also sets [NCALPHA_BG_PALETTE][crate::NCALPHA_BG_PALETTE] and
+    /// [NCALPHA_OPAQUE][crate::NCALPHA_OPAQUE], and clears out
+    /// [NCALPHA_BGDEFAULT_MASK][crate::NCALPHA_BGDEFAULT_MASK].
     ///
     /// *C style function: [nccell_set_bg_palindex()][crate::nccell_set_bg_palindex].*
     pub fn set_bg_palindex(&mut self, index: NcPaletteIndex) {
         crate::nccell_set_bg_palindex(self, index);
     }
 
-    /// Sets the background [NcRgb] and marks it as not using the default color.
+    /// Sets the background [`NcRgb`] and marks it as not using the default color.
     ///
     /// *C style function: [nccell_set_bg_rgb()][crate::nccell_set_bg_rgb].*
     pub fn set_bg_rgb(&mut self, rgb: NcRgb) {
         crate::nccell_set_bg_rgb(self, rgb);
     }
 
-    /// Sets the background [NcColor] RGB components, and marks it as not using
+    /// Sets the background RGB [`NcComponent`]s, and marks it as not using
     /// the "default color".
     ///
     /// *C style function: [nccell_set_bg_rgb8()][crate::nccell_set_bg_rgb8].*
-    pub fn set_bg_rgb8(&mut self, red: NcColor, green: NcColor, blue: NcColor) {
+    pub fn set_bg_rgb8(&mut self, red: NcComponent, green: NcComponent, blue: NcComponent) {
         crate::nccell_set_bg_rgb8(self, red, green, blue);
     }
 
-    /// Sets the foreground [NcAlphaBits].
+    /// Sets the foreground [`NcAlphaBits`].
     ///
     /// *C style function: [nccell_set_fg_alpha()][crate::nccell_set_fg_alpha].*
     pub fn set_fg_alpha(&mut self, alpha: NcAlphaBits) {
         crate::nccell_set_fg_alpha(self, alpha);
     }
 
-    /// Indicates to use the "default color" for the foreground [NcChannel].
+    /// Indicates to use the "default color" for the foreground [`NcChannel`].
     ///
     /// *C style function: [nccell_set_fg_default()][crate::nccell_set_fg_default].*
     pub fn set_fg_default(&mut self) {
         crate::nccell_set_fg_default(self);
     }
 
-    /// Sets the foreground [NcPaletteIndex].
+    /// Sets the foreground [`NcPaletteIndex`].
     ///
-    /// Also sets [NCCELL_FG_PALETTE][crate::NCCELL_FG_PALETTE] and
-    /// [NCCELL_ALPHA_OPAQUE][crate::NCCELL_ALPHA_OPAQUE], and clears out
-    /// [NCCELL_BGDEFAULT_MASK][crate::NCCELL_BGDEFAULT_MASK].
+    /// Also sets [NCALPHA_FG_PALETTE][crate::NCALPHA_FG_PALETTE] and
+    /// [NCALPHA_OPAQUE][crate::NCALPHA_OPAQUE], and clears out
+    /// [NCALPHA_BGDEFAULT_MASK][crate::NCALPHA_BGDEFAULT_MASK].
     ///
     /// *C style function: [nccell_set_fg_palindex()][crate::nccell_set_fg_palindex].*
     pub fn set_fg_palindex(&mut self, index: NcPaletteIndex) {
         crate::nccell_set_fg_palindex(self, index);
     }
 
-    /// Sets the foreground [NcRgb] and marks it as not using the default color.
+    /// Sets the foreground [`NcRgb`] and marks it as not using the default color.
     ///
     /// *C style function: [nccell_set_fg_rgb()][crate::nccell_set_fg_rgb].*
     pub fn set_fg_rgb(&mut self, rgb: NcRgb) {
         crate::nccell_set_fg_rgb(self, rgb);
     }
 
-    /// Sets the foreground [NcColor] RGB components, and marks it as not using
+    /// Sets the foreground RGB [`NcComponent`]s, and marks it as not using
     /// the "default color".
     ///
     /// *C style function: [nccell_set_fg_rgb8()][crate::nccell_set_fg_rgb8].*
-    pub fn set_fg_rgb8(&mut self, red: NcColor, green: NcColor, blue: NcColor) {
+    pub fn set_fg_rgb8(&mut self, red: NcComponent, green: NcComponent, blue: NcComponent) {
         crate::nccell_set_fg_rgb8(self, red, green, blue);
     }
 }
 
 /// # `NcCell` methods: other components
 impl NcCell {
-    /// Returns true if the two cells have distinct [NcEgc]s, attributes,
-    /// or [NcChannel]s.
+    /// Returns true if the two cells have distinct `EGC`s, attributes,
+    /// or [`NcChannel`]s.
     ///
     /// The actual egcpool index needn't be the same--indeed, the planes
-    /// needn't even be the same. Only the expanded NcEgc must be bit-equal.
+    /// needn't even be the same. Only the expanded `EGC` must be bit-equal.
     ///
     /// *C style function: [nccellcmp()][crate::nccellcmp].*
     pub fn compare(plane1: &NcPlane, cell1: &NcCell, plane2: &NcPlane, cell2: &NcCell) -> bool {
         crate::nccellcmp(plane1, cell1, plane2, cell2)
     }
 
-    /// Saves the [NcStyleMask] and the [NcChannelPair], and returns the [NcEgc].
-    /// (These are the three elements of an NcCell).
+    /// Saves the [`NcStyle`] and the [`NcChannels`], and returns the `EGC`.
+    /// (These are the three elements of an `NcCell`).
     ///
     /// *C style function: [nccell_fg_alpha()][crate::nccell_fg_alpha].*
     pub fn extract(
         &mut self,
         plane: &mut NcPlane,
-        styles: &mut NcStyleMask,
-        channels: &mut NcChannelPair,
-    ) -> NcEgc {
+        styles: &mut NcStyle,
+        channels: &mut NcChannels,
+    ) -> String {
         crate::nccell_extract(plane, self, styles, channels)
     }
 
-    /// Returns the [NcEgc] of the NcCell.
+    /// Returns the `EGC` of the `NcCell`.
     ///
     /// See also: [extended_gcluster][NcCell#method.extended_gcluster] method.
     ///
     /// *(No equivalent C style function)*
-    pub fn egc(&mut self, plane: &mut NcPlane) -> NcEgc {
+    pub fn egc(&mut self, plane: &mut NcPlane) -> String {
         let (mut _styles, mut _channels) = (0, 0);
         crate::nccell_extract(plane, self, &mut _styles, &mut _channels)
     }
 
-    /// Returns the [NcStyleMask] bits.
+    /// Returns the [`NcStyle`] bits.
     ///
     /// *C style function: [nccell_styles()][crate::nccell_styles].*
-    pub fn styles(&mut self) -> NcStyleMask {
+    pub fn styles(&mut self) -> NcStyle {
         crate::nccell_styles(self)
     }
 
-    /// Removes the specified [NcStyleMask] bits.
+    /// Removes the specified [`NcStyle`] bits.
     ///
-    /// *C style function: [nccell_off()][crate::nccell_off_styles].*
-    pub fn off_styles(&mut self, stylebits: NcStyleMask) {
+    /// *C style function: [nccell_off_styles()][crate::nccell_off_styles].*
+    pub fn styles_off(&mut self, stylebits: NcStyle) {
         crate::nccell_off_styles(self, stylebits)
     }
 
-    /// Adds the specified [NcStyleMask] bits.
+    /// Adds the specified [`NcStyle`] bits.
     ///
-    /// *C style function: [nccell_on()][crate::nccell_on_styles].*
-    pub fn on_styles(&mut self, stylebits: NcStyleMask) {
+    /// *C style function: [nccell_on_styles()][crate::nccell_on_styles].*
+    pub fn styles_on(&mut self, stylebits: NcStyle) {
         crate::nccell_on_styles(self, stylebits)
     }
 
-    /// Sets just the specified [NcStyleMask] bits.
+    /// Sets just the specified [`NcStyle`] bits.
     ///
     /// *C style function: [nccell_set_styles()][crate::nccell_set_styles].*
-    pub fn set_styles(&mut self, stylebits: NcStyleMask) {
+    pub fn styles_set(&mut self, stylebits: NcStyle) {
         crate::nccell_set_styles(self, stylebits)
     }
 }
 
 /// # `NcCell` methods: text
 impl NcCell {
-    // /// Returns a pointer to the [NcEgc] of this NcCell in the [NcPlane] `plane`.
+    // /// Returns a pointer to the `EGC` of this NcCell in the [NcPlane] `plane`.
     // ///
     // /// This pointer can be invalidated by any further operation on the referred
     // /// plane, so… watch out!
@@ -369,14 +369,14 @@ impl NcCell {
     //     egcpointer
     // }
 
-    /// Copies the UTF8-encoded [NcEgc] out of this NcCell,
+    /// Copies the UTF8-encoded `EGC` out of this NcCell,
     /// whether simple or complex.
     ///
     /// The result is not tied to the [NcPlane],
     /// and persists across erases and destruction.
     ///
     /// *C style function: [nccell_strdup()][crate::nccell_strdup].*
-    pub fn strdup(&self, plane: &NcPlane) -> NcEgc {
+    pub fn strdup(&self, plane: &NcPlane) -> String {
         crate::nccell_strdup(plane, self)
     }
 
@@ -404,17 +404,17 @@ impl NcCell {
 
 /// # `NcCell` methods: boxes
 impl NcCell {
-    /// Loads up six cells with the [NcEgc]s necessary to draw a box.
+    /// Loads up six cells with the `EGC`s necessary to draw a box.
     ///
-    /// On error, any [NcCell]s this function might have loaded before the error
+    /// On error, any [`NcCell`]s this function might have loaded before the error
     /// are [release][NcCell#method.release]d.
-    /// There must be at least six [NcEgc]s in `gcluster`.
+    /// There must be at least six `EGC`s in `gcluster`.
     ///
     /// *C style function: [nccells_load_box()][crate::nccells_load_box].*
     pub fn load_box(
         plane: &mut NcPlane,
-        style: NcStyleMask,
-        channels: NcChannelPair,
+        style: NcStyle,
+        channels: NcChannels,
         ul: &mut NcCell,
         ur: &mut NcCell,
         ll: &mut NcCell,
@@ -433,8 +433,8 @@ impl NcCell {
     /// *C style function: [nccells_double_box()][crate::nccells_double_box].*
     pub fn double_box(
         plane: &mut NcPlane,
-        style: NcStyleMask,
-        channels: NcChannelPair,
+        style: NcStyle,
+        channels: NcChannels,
         ul: &mut NcCell,
         ur: &mut NcCell,
         ll: &mut NcCell,
@@ -452,8 +452,8 @@ impl NcCell {
     /// *C style function: [nccells_rounded_box()][crate::nccells_double_box].*
     pub fn rounded_box(
         plane: &mut NcPlane,
-        style: NcStyleMask,
-        channels: NcChannelPair,
+        style: NcStyle,
+        channels: NcChannels,
         ul: &mut NcCell,
         ur: &mut NcCell,
         ll: &mut NcCell,

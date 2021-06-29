@@ -12,6 +12,7 @@ OLDVERSION="$1"
 VERSION="$2"
 QUIP="$3"
 
+# finalize the date on the most recent version, add any last-minute notes?
 vi NEWS.md
 
 git clean -f -d -x
@@ -23,7 +24,7 @@ git clean -f -d -x
 #       will surely otherwise go out of date.
 sed -i -e "s/\(project(notcurses VERSION \)$OLDVERSION/\1$VERSION/" CMakeLists.txt
 sed -i -e "s/\(PROJECT_NUMBER *= \)$OLDVERSION/\1$VERSION/" doc/Doxyfile
-for i in doc/man/man*/*.md cffi/notcurses-*.md ; do
+for i in doc/man/man*/*.md cffi/notcurses-*.md cffi/ncdirect-*.md; do
   sed -i -e "s/% v$OLDVERSION/% v$VERSION/" "$i"
 done
 sed -i -e "s/v$OLDVERSION/v$VERSION/g" doc/man/index.html

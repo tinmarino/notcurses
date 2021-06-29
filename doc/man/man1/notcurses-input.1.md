@@ -1,6 +1,6 @@
 % notcurses-input(1)
 % nick black <nickblack@linux.com>
-% v2.3.0
+% v2.3.7
 
 # NAME
 
@@ -24,5 +24,6 @@ button is held down.
 
 # SEE ALSO
 
+**tack(1)**,
 **notcurses(3)**,
 **notcurses_input(3)**

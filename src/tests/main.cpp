@@ -13,22 +13,34 @@
 #include <langinfo.h>
 
 const char* datadir = NOTCURSES_SHARE;
-ncloglevel_e loglevel = NCLOGLEVEL_SILENT;
+ncloglevel_e cliloglevel = NCLOGLEVEL_SILENT;
 
 auto testing_notcurses() -> struct notcurses* {
   notcurses_options nopts{};
   // get loglevel from command line. enabling it by default leads to
   // more confusion than useful information, so leave it off by default.
-  nopts.loglevel = loglevel;
+  nopts.loglevel = cliloglevel;
   nopts.flags = NCOPTION_SUPPRESS_BANNERS | NCOPTION_NO_ALTERNATE_SCREEN;
   auto nc = notcurses_init(&nopts, nullptr);
   return nc;
 }
 
-auto find_data(const char* datum) -> char* {
+template <typename T> using uniqptr = std::unique_ptr<T,free_deleter>;
+
+auto find_data(const char* datum) -> uniqptr<char> {
   std::filesystem::path p = datadir;
   p /= datum;
-  return strdup(p.c_str());
+  uniqptr<char> uptr(strdup(p.c_str()));
+  return uptr;
+}
+
+auto is_test_tty() -> bool {
+  int fd = open("/dev/tty", O_RDWR);
+  if(fd < 0){
+    return false;
+  }
+  close(fd);
+  return true;
 }
 
 static void
@@ -41,7 +53,7 @@ handle_opts(const char** argv){
     }else if(strcmp(*argv, "-p") == 0){
       inarg = true;
     }else if(strncmp(*argv, "-l", 2) == 0){ // just require -l
-      loglevel = NCLOGLEVEL_TRACE;
+      cliloglevel = NCLOGLEVEL_TRACE;
     }
     ++argv;
   }
@@ -57,12 +69,10 @@ check_data_dir(){
     return -1;
   }
   struct stat s;
-  if(stat(p, &s)){
-    std::cerr << "Couldn't open " << p << ". Supply directory with -p." << std::endl;
-    free(p);
+  if(stat(p.get(), &s)){
+    std::cerr << "Couldn't open " << p.get() << ". Supply directory with -p." << std::endl;
     return -1;
   }
-  free(p);
   return 0;
 }
 

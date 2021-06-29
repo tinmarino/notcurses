@@ -1,15 +1,15 @@
 //! `NcDirect`
 
-// total: 47
+// total: 62
 // ---------------------------------------------------
 // (X)  1 : wont do
+// (~)  3 : TODO / WIP
 //
-// (f) 42 : unsafe ffi function exported by bindgen
-// (w)  0 : safely wrapped ffi function
-// (r)  4 : static function manually reimplemented
+// (f) 46 : unsafe ffi function exported by bindgen
+// (w)  1 : safely wrapped ffi function
+// (r) 11 : static function manually reimplemented
 //
-// (m) 45 : method implemented
-// (~)  1 : work in progress
+// (m) 55 : method implemented
 //
 // (t)  0 : unit test done for the function
 // (T)  0 : unit test done also for the method
@@ -18,11 +18,20 @@
 // fm  ncdirect_bg_palindex
 // fm  ncdirect_bg_rgb
 // fm  ncdirect_box
+// rm  ncdirect_canbraille
+// rm  ncdirect_canchangecolor
+// fm  ncdirect_canget_cursor
+// rm  ncdirect_canfade
+// rm  ncdirect_canhalfblock
 // fm  ncdirect_canopen_images
+// rm  ncdirect_canopen_videos
+// rm  ncdirect_canquadrant
+// rm  ncdirect_cantruecolor
 // fm  ncdirect_canutf8
+// wm  ncdirect_capabilities
 // fm  ncdirect_check_pixel_support
 // fm  ncdirect_clear
-// f~  ncdirect_core_init
+//~f   ncdirect_core_init
 // fm  ncdirect_cursor_disable
 // fm  ncdirect_cursor_down
 // fm  ncdirect_cursor_enable
@@ -33,6 +42,7 @@
 // fm  ncdirect_cursor_right
 // fm  ncdirect_cursor_up
 // fm  ncdirect_cursor_yx
+// fm  ncdirect_detected_terminal
 // fm  ncdirect_dim_x
 // fm  ncdirect_dim_y
 // fm  ncdirect_double_box
@@ -41,9 +51,11 @@
 // fm  ncdirect_fg_rgb
 // fm  ncdirect_flush
 // fm  ncdirect_getc
+//~r   ncdirect_heavy_box,
 // fm  ncdirect_hline_interp
 // fm  ncdirect_init
 // fm  ncdirect_inputready_fd
+//~r   ncdirect_light_box,
 // fm  ncplane_on_styles
 // fm  ncplane_off_styles
 // fm  ncdirect_palette_size
@@ -56,6 +68,9 @@
 // fm  ncdirect_rounded_box
 // fm  ncplane_set_styles
 // fm  ncdirect_stop
+// f   ncdirect_stream
+// f   ncdirect_styles
+// f   ncdirect_supported_styles
 // fm  ncdirect_vline_interp
 // rm  ncdirect_bg_rgb8
 // rm  ncdirect_fg_rgb8
@@ -98,3 +113,13 @@ pub const NCDIRECT_OPTION_INHIBIT_SETLOCALE: NcDirectFlags =
 /// signal handlers.
 pub const NCDIRECT_OPTION_NO_QUIT_SIGHANDLERS: NcDirectFlags =
     crate::bindings::ffi::NCDIRECT_OPTION_NO_QUIT_SIGHANDLERS as NcDirectFlags;
+
+/// Flag that enables showing detailed information.
+pub const NCDIRECT_OPTION_VERBOSE: NcDirectFlags =
+    crate::bindings::ffi::NCDIRECT_OPTION_VERBOSE as NcDirectFlags;
+
+/// Flag that enables showing all diagnostics (equivalent to
+/// [`NCLOGLEVEL_TRACE`][crate::NCLOGLEVEL_TRACE]).
+/// Implies [`NCDIRECT_OPTION_VERBOSE`].
+pub const NCDIRECT_OPTION_VERY_VERBOSE: NcDirectFlags =
+    crate::bindings::ffi::NCDIRECT_OPTION_VERY_VERBOSE as NcDirectFlags;

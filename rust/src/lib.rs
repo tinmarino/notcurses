@@ -1,4 +1,4 @@
-//! `libnotcurses-sys` is a Rust wrapper for the [notcurses
+//! `libnotcurses-sys` is a low-level Rust wrapper for the [notcurses
 //! C library](https://www.github.com/dankamongmen/notcurses/)
 //!
 //! *This is a work in progress.*
@@ -22,7 +22,7 @@
 //! use libnotcurses_sys::*;
 //!
 //! fn main() -> NcResult<()> {
-//!     let mut nc = Notcurses::with_flags(NCOPTION_NO_ALTERNATE_SCREEN)?;
+//!     let mut nc = Nc::with_flags(NCOPTION_NO_ALTERNATE_SCREEN)?;
 //!     let plane = nc.stdplane();
 //!     plane.putstr("hello world")?;
 //!     nc.render()?;
@@ -31,17 +31,17 @@
 //! }
 //! ```
 //!
-//! Although you still have to manually call the `stop()` method for [`Notcurses`]
-//! and [`NcDirect`] objects, and the `destroy()` method for the rest of types that
-//! allocate, (like [`NcPlane`], [`NcMenu`]…) at the end of their scope, since the
-//! Drop trait is not implemented for any wrapping type in libnotcurses-sys.
+//! Although you still have to manually call the `stop()` method for [`Nc`] and
+//! [`NcDirect`] objects, and the `destroy()` method for the rest of types that
+//! allocate, (like [`NcPlane`], [`NcMenu`]…) at the end of their scope, since
+//! the Drop trait is not implemented for any wrapping type in libnotcurses-sys.
 //!
 //! But they do implement methods and use [`NcResult`] as the return type,
 //! for handling errors in the way we are used to in Rust.
 //!
 //! For the types that don't allocate, most are based on primitives like `i32`,
 //! `u32`, `u64`… without a name in the C library. In Rust they are type aliased
-//! (e.g.: [`NcChannel`], [`NcChannelPair`], [`NcRgb`], [`NcColor`]…), to
+//! (e.g.: [`NcChannel`], [`NcChannels`], [`NcRgb`], [`NcComponent`]…), to
 //! leverage type checking, and they implement methods through [traits](#traits)
 //! (e.g. [`NcChannelMethods`] must be in scope to use the `NcChannel` methods.
 //!
@@ -104,6 +104,7 @@
 //! - [USAGE.md](https://github.com/dankamongmen/notcurses/blob/master/USAGE.md)
 //! - [HACKING.md](https://github.com/dankamongmen/notcurses/blob/master/doc/HACKING.md)
 //! - [Doxygen Documentation](https://nick-black.com/notcurses/html/index.html)
+//! - [FOSDEM 2021 presentation](https://fosdem.org/2021/schedule/event/notcurses/)
 //!
 #![allow(non_upper_case_globals, non_camel_case_types, non_snake_case)]
 #![allow(clippy::too_many_arguments, clippy::needless_doctest_main)]
@@ -113,6 +114,7 @@ mod bindings;
 pub use bindings::*;
 
 mod r#box;
+mod capabilities;
 mod cells;
 mod channel;
 mod dimension;
@@ -128,13 +130,13 @@ mod palette;
 mod pixel;
 mod plane;
 mod resizecb;
-mod signal;
 mod stats;
 mod time;
 mod visual;
 mod widgets;
 
 pub use crate::input::*;
+pub use capabilities::*;
 pub use cells::*;
 pub use channel::*;
 pub use dimension::*;
@@ -150,7 +152,6 @@ pub use pixel::*;
 pub use plane::*;
 pub use r#box::*;
 pub use resizecb::*;
-pub use signal::*;
 pub use stats::*;
 pub use time::*;
 pub use visual::*;

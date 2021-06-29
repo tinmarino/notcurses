@@ -13,12 +13,18 @@ int main(void){
     return EXIT_FAILURE;
   }
   int e = 0;
-  for(unsigned i = 0 ; i < (NCSTYLE_STRUCK << 1u) ; ++i){
-    if(ncdirect_set_styles(nc, i)){
+  for(unsigned i = 0 ; i < (NCSTYLE_ITALIC << 1u) ; ++i){
+    if((ncdirect_supported_styles(nc) & i) == i){
+      if(ncdirect_set_styles(nc, i)){
+        ncdirect_stop(nc);
+        return EXIT_FAILURE;
+      }
+    }
+    printf("%08x ", i);
+    if(ncdirect_set_styles(nc, NCSTYLE_NONE)){
       ncdirect_stop(nc);
       return EXIT_FAILURE;
     }
-    printf("%08x ", i);
     if(++e % 8 == 0){
       printf("\n");
     }

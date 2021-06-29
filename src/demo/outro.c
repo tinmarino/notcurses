@@ -95,13 +95,15 @@ videothread(void* vnc){
     return PTHREAD_CANCELED;
   }
   uint64_t trans_channel = 0;
-  ncchannels_set_bg_alpha(&trans_channel, CELL_ALPHA_TRANSPARENT);
-  ncchannels_set_fg_alpha(&trans_channel, CELL_ALPHA_TRANSPARENT);
+  ncchannels_set_bg_alpha(&trans_channel, NCALPHA_TRANSPARENT);
+  ncchannels_set_fg_alpha(&trans_channel, NCALPHA_TRANSPARENT);
   ncplane_set_base(apiap, "", 0, trans_channel);
   ncplane_set_fg_rgb8(apiap, 0xc0, 0x40, 0x80);
   ncplane_set_bg_rgb8(apiap, 0, 0, 0);
   ncplane_putstr_aligned(apiap, 0, NCALIGN_CENTER,
-      "Apia 🡺 Atlanta. Samoa, tula'i ma sisi ia lau fu'a, lou pale lea!");
+      notcurses_canutf8(nc) ?
+       "Apia 🡺 Atlanta. Samoa, tula'i ma sisi ia lau fu'a, lou pale lea!" :
+       "Apia -> Atlanta. Samoa, tula'i ma sisi ia lau fu'a, lou pale lea!");
   int canceled = ncvisual_stream(nc, ncv, delaymultiplier, perframe, &ovopts, &three);
   ncvisual_destroy(ncv);
   ncplane_destroy(apiap);
@@ -115,7 +117,7 @@ static struct ncplane*
 outro_message(struct notcurses* nc, int* rows, int* cols){
   const char str0[] = " ATL, baby! ATL! ";
   const char str1[] = " throw your hands in the air ";
-  const char str2[] = " hack on! —dank❤ ";
+  const char* str2 = notcurses_canutf8(nc) ? " hack on! —dank❤ " : " hack on! --dank ";
   int ystart = *rows - 6;
   ncplane_options nopts = {
     .rows = 5,
@@ -138,7 +140,7 @@ outro_message(struct notcurses* nc, int* rows, int* cols){
   ncplane_dim_yx(non, rows, cols);
   int ybase = 0;
   // bevel the upper corners
-  if(ncplane_set_bg_alpha(non, CELL_ALPHA_TRANSPARENT)){
+  if(ncplane_set_bg_alpha(non, NCALPHA_TRANSPARENT)){
     return NULL;
   }
   if(ncplane_putchar_yx(non, ybase, 0, ' ') < 0 || ncplane_putchar(non, ' ') < 0){
@@ -160,7 +162,7 @@ outro_message(struct notcurses* nc, int* rows, int* cols){
   if(ncplane_set_bg_rgb8(non, 0, 180, 180)){
     return NULL;
   }
-  if(ncplane_set_bg_alpha(non, CELL_ALPHA_BLEND)){
+  if(ncplane_set_bg_alpha(non, NCALPHA_BLEND)){
     return NULL;
   }
   ncplane_on_styles(non, NCSTYLE_BOLD);
@@ -182,9 +184,6 @@ outro_message(struct notcurses* nc, int* rows, int* cols){
 }
 
 int outro(struct notcurses* nc){
-  if(!notcurses_canutf8(nc)){ // there's UTF8 in the outro message
-    return 0;
-  }
   int rows, cols;
   struct ncplane* ncp = notcurses_stddim_yx(nc, &rows, &cols);
   ncplane_erase(ncp);

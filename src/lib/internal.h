@@ -8,8 +8,10 @@ extern "C" {
 #include "version.h"
 #include "builddef.h"
 
+#include <poll.h>
 #include <term.h>
 #include <time.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -26,12 +28,12 @@ extern "C" {
 #include <netinet/in.h>
 #include "notcurses/notcurses.h"
 #include "compat/compat.h"
+#include "termdesc.h"
 #include "egcpool.h"
 
 #define API __attribute__((visibility("default")))
 #define ALLOC __attribute__((malloc)) __attribute__((warn_unused_result))
 
-struct esctrie;
 struct sixelmap;
 struct ncvisual_details;
 
@@ -257,13 +259,13 @@ typedef struct rasterstate {
   // modified by: output, cursor moves, clearing the screen (during refresh).
   int y, x;
 
-  uint32_t curattr;// current attributes set (does not include colors)
-  unsigned lastr;  // foreground rgb, overloaded for palindexed fg
+  unsigned lastr;   // foreground rgb, overloaded for palindexed fg
   unsigned lastg;
   unsigned lastb;
-  unsigned lastbr; // background rgb, overloaded for palindexed bg
+  unsigned lastbr;  // background rgb, overloaded for palindexed bg
   unsigned lastbg;
   unsigned lastbb;
+  uint16_t curattr; // current attributes set (does not include colors)
   // we elide a color escape iff the color has not changed between two cells
   bool fgelidable;
   bool bgelidable;
@@ -397,128 +399,13 @@ typedef struct nctabbed {
   nctabbed_options opts; // copied in nctabbed_create()
 } nctabbed;
 
-// terminfo cache. FIXME shrink this and kill a pointer deref by writing them
-// all into one buffer, and storing 1-biased indices with 0 for NULL.
-typedef struct tinfo {
-  unsigned colors;// number of colors terminfo reported usable for this screen
-  char* sgr;      // set many graphics properties at once
-  char* sgr0;     // restore default presentation properties
-  char* setaf;    // set foreground color (ANSI)
-  char* setab;    // set background color (ANSI)
-  char* op;       // set foreground and background color to default
-  char* fgop;     // set foreground to default
-  char* bgop;     // set background to default
-  char* cup;      // move cursor
-  char* cuu;      // move N cells up
-  char* cub;      // move N cells left
-  char* cuf;      // move N cells right
-  char* cud;      // move N cells down
-  char* cuf1;     // move 1 cell right
-  char* home;     // home cursor
-  char* civis;    // hide cursor
-  char* cnorm;    // restore cursor to default state
-  char* hpa;      // horizontal position adjusment (move cursor on row)
-  char* vpa;      // vertical position adjustment (move cursor on column)
-  char* standout; // NCSTYLE_STANDOUT
-  char* uline;    // NCSTYLE_UNDERLINK
-  char* reverse;  // NCSTYLE_REVERSE
-  char* blink;    // NCSTYLE_BLINK
-  char* dim;      // NCSTYLE_DIM
-  char* bold;     // NCSTYLE_BOLD
-  char* italics;  // NCSTYLE_ITALIC
-  char* italoff;  // NCSTYLE_ITALIC (disable)
-  char* struck;   // NCSTYLE_STRUCK
-  char* struckoff;// NCSTYLE_STRUCK (disable)
-  char* initc;    // set a palette entry's RGB value
-  char* oc;       // restore original colors
-  char* clearscr; // erase screen and home cursor
-  char* sc;       // push the cursor location onto the stack
-  char* rc;       // pop the cursor location off the stack
-  char* smkx;     // enter keypad transmit mode (keypad_xmit)
-  char* rmkx;     // leave keypad transmit mode (keypad_local)
-  char* getm;     // get mouse events
-  char* smcup;    // enter alternate mode
-  char* rmcup;    // restore primary mode
-  // we use the cell's size in pixels for pixel blitting. this information can
-  // be acquired on all terminals with pixel support.
-  int cellpixy;   // cell pixel height, might be 0
-  int cellpixx;   // cell pixel width, might be 0
-
-  // kitty interprets an RGB background that matches the default background
-  // color *as* the default background, meaning it'll be translucent if
-  // background_opaque is in use. detect this, and avoid the default if so.
-  // bg_collides_default is either 0x0000000 or 0x1RRGGBB.
-  uint32_t bg_collides_default;
-
-  // sprixel support. there are several different sprixel protocols, of
-  // which we support sixel and kitty. the kitty protocol is used based
-  // on TERM heuristics. otherwise, we attempt to detect sixel support, and
-  // query the details of the implementation.
-  pthread_mutex_t pixel_query; // only query for pixel support once
-  int color_registers; // sixel color registers (post pixel_query_done)
-  int sixel_maxx, sixel_maxy; // sixel size maxima (post pixel_query_done)
-  int (*pixel_destroy)(const struct notcurses* nc, const struct ncpile* p, FILE* out, sprixel* s);
-  // wipe out a cell's worth of pixels from within a sprixel. for sixel, this
-  // means leaving out the pixels (and likely resizes the string). for kitty,
-  // this means dialing down their alpha to 0 (in equivalent space).
-  int (*pixel_wipe)(sprixel* s, int y, int x);
-  // perform the inverse of pixel_wipe, restoring an annihilated sprixcell.
-  int (*pixel_rebuild)(sprixel* s, int y, int x, uint8_t* auxvec);
-  int (*pixel_remove)(int id, FILE* out); // kitty only, issue actual delete command
-  int (*pixel_init)(int fd);      // called when support is detected
-  int (*pixel_draw)(const struct ncpile* p, sprixel* s, FILE* out);
-  int (*pixel_shutdown)(int fd);  // called during context shutdown
-  int (*pixel_clear_all)(int fd); // called during startup, kitty only
-  int sprixel_scale_height; // sprixel must be a multiple of this many rows
-  bool bitmap_supported;    // do we support bitmaps (post pixel_query_done)?
-  bool sprixel_cursor_hack; // do sprixels reset the cursor? (mlterm)
-  bool pixel_query_done;    // have we yet performed pixel query?
-  // alacritty went rather off the reservation for their sixel support. they
-  // reply to DSA with CSI?6c, meaning VT102, but no VT102 had Sixel support,
-  // so if the TERM variable contains "alacritty", *and* we get VT102, we go
-  // ahead and query XTSMGRAPHICS.
-  bool alacritty_sixel_hack;
-
-  bool RGBflag;   // "RGB" flag for 24bpc truecolor
-  bool CCCflag;   // "CCC" flag for palette set capability
-  bool BCEflag;   // "BCE" flag for erases with background color
-  bool AMflag;    // "AM" flag for automatic movement to next line
-
-  // assigned based off nl_langinfo() in notcurses_core_init()
-  bool utf8;      // are we using utf-8 encoding, as hoped?
-
-  // these are assigned wholly through TERM-based heuristics
-  bool quadrants; // do we have (good, vetted) Unicode 1 quadrant support?
-  bool sextants;  // do we have (good, vetted) Unicode 13 sextant support?
-  bool braille;   // do we have Braille support? (linux console does not)
-} tinfo;
-
-typedef struct ncinputlayer {
-  int ttyinfd;  // file descriptor for processing input
-  unsigned char inputbuf[BUFSIZ];
-  // we keep a wee ringbuffer of input queued up for delivery. if
-  // inputbuf_occupied == sizeof(inputbuf), there is no room. otherwise, data
-  // can be read to inputbuf_write_at until we fill up. the first datum
-  // available for the app is at inputbuf_valid_starts iff inputbuf_occupied is
-  // not 0. the main purpose is working around bad predictions of escapes.
-  unsigned inputbuf_occupied;
-  unsigned inputbuf_valid_starts;
-  unsigned inputbuf_write_at;
-  // number of input events seen. does not belong in ncstats, since it must not
-  // be reset (semantics are relied upon by widgets for mouse click detection).
-  uint64_t input_events;
-  struct esctrie* inputescapes; // trie of input escapes -> ncspecial_keys
-} ncinputlayer;
-
 typedef struct ncdirect {
-  palette256 palette;        // 256-indexed palette can be used instead of/with RGB
+  ncpalette palette;         // 256-indexed palette can be used instead of/with RGB
   FILE* ttyfp;               // FILE* for output tty
   int ctermfd;               // fd for controlling terminal
   tinfo tcache;              // terminfo cache
   uint64_t channels;         // current channels
   uint16_t stylemask;        // current styles
-  ncinputlayer input;        // input layer; we're in cbreak mode
-  struct termios tpreserved; // terminal state upon entry
   // some terminals (e.g. kmscon) return cursor coordinates inverted from the
   // typical order. we detect it the first time ncdirect_cursor_yx() is called.
   bool detected_cursor_inversion; // have we performed inversion testing?
@@ -548,7 +435,7 @@ struct crender {
     // take this into account when solving the background color.
     unsigned blittedquads: 4;
     unsigned damaged: 1; // only used in rasterization
-    // if CELL_ALPHA_HIGHCONTRAST is in play, we apply the HSV flip once the
+    // if NCALPHA_HIGHCONTRAST is in play, we apply the HSV flip once the
     // background is locked in. set highcontrast to indicate this.
     unsigned highcontrast: 1;
     unsigned fgblends: 8;
@@ -571,6 +458,7 @@ typedef struct ncpile {
   struct ncpile *prev, *next; // circular list
   size_t crenderlen;          // size of crender vector
   int dimy, dimx;             // rows and cols at time of render
+  int scrolls;                // how many real lines need be scrolled at raster
   sprixel* sprixelcache;      // list of sprixels
 } ncpile;
 
@@ -598,42 +486,43 @@ typedef struct notcurses {
 
   FILE* ttyfp;    // FILE* for writing rasterized data
   int ttyfd;      // file descriptor for controlling tty
-  ncinputlayer input; // input layer; we're in cbreak mode
   FILE* renderfp; // debugging FILE* to which renderings are written
   tinfo tcache;   // terminfo cache
-  struct termios tpreserved; // terminal state upon entry
   pthread_mutex_t pilelock; // guards pile list, locks resize in render
   bool suppress_banner; // from notcurses_options
 
   // desired margins (best-effort only), copied in from notcurses_options
   int margin_t, margin_b, margin_r, margin_l;
   int loglevel;
-  palette256 palette; // 256-indexed palette can be used instead of/with RGB
+  ncpalette palette; // 256-indexed palette can be used instead of/with RGB
   bool palette_damage[NCPALETTESIZE];
   unsigned stdio_blocking_save; // was stdio blocking at entry? restore on stop.
+  uint64_t flags;  // copied from notcurses_options
 } notcurses;
+
+// this flag is used internally, by direct mode (which might want
+// to scroll with the output). rendered mode never sets it.
+#define NCVISUAL_OPTION_SCROLL 0x0080ull // ought we scroll with the output?
 
 typedef struct blitterargs {
   // FIXME begy/begx are really only of interest to scaling; they ought be
   // consumed there, and blitters ought always work with the scaled output.
   int begy;            // upper left start within visual
   int begx;
+  int leny;            // number of source pixels to use
+  int lenx;
+  uint64_t flags;      // flags (as selected from ncvisual_options->flags)
   uint32_t transcolor; // if non-zero, treat the lower 24 bits as a transparent color
   union { // cell vs pixel-specific arguments
     struct {
       int placey;      // placement within ncplane
       int placex;
-      int blendcolors; // use CELL_ALPHA_BLEND
     } cell;            // for cells
     struct {
       int celldimx;    // horizontal pixels per cell
       int celldimy;    // vertical pixels per cell
       int colorregs;   // number of color registers
       sprixel* spx;    // sprixel object
-      // in at least mlterm, emitting a sixel makes the cursor visible.
-      // if the cursor is hidden, and sprixel_cursor_hack is set, this
-      // is set to the civis capability.
-      const char* cursor_hack;
     } pixel;           // for pixels
   } u;
 } blitterargs;
@@ -642,24 +531,34 @@ typedef struct blitterargs {
 // from scaling. we might actually need more pixels due to framing concerns,
 // in which case just assume transparent input pixels where needed.
 typedef int (*ncblitter)(struct ncplane* n, int linesize, const void* data,
-                         int scaledy, int scaledx, const blitterargs* bargs);
+                         int scaledy, int scaledx, const blitterargs* bargs,
+                         int bpp);
 
 // a system for rendering RGBA pixels as text glyphs or sixel/kitty bitmaps
 struct blitset {
   ncblitter_e geom;
   int width;        // number of input pixels per output cell, width
   int height;       // number of input pixels per output cell, height
+  // the EGCs which form the blitter. bits grow left to right, and then top to
+  // bottom. the first character is always a space, the last a full block.
+  const wchar_t* egcs;
   // the EGCs which form the various levels of a given plotset. if the geometry
   // is wide, things are arranged with the rightmost side increasing most
   // quickly, i.e. it can be indexed as height arrays of 1 + height glyphs. i.e.
   // the first five braille EGCs are all 0 on the left, [0..4] on the right.
-  const wchar_t* egcs;
+  const wchar_t* plotegcs;
   ncblitter blit;
   const char* name;
   bool fill;
 };
 
 #include "blitset.h"
+
+int ncvisual_blitset_geom(const notcurses* nc, const tinfo* tcache,
+                          const struct ncvisual* n,
+                          const struct ncvisual_options* vopts,
+                          int* y, int* x, int* scaley, int* scalex,
+                          int* leny, int* lenx, const struct blitset** blitter);
 
 static inline int
 ncfputs(const char* ext, FILE* out){
@@ -691,19 +590,10 @@ void update_write_stats(const struct timespec* time1, const struct timespec* tim
 
 void sigwinch_handler(int signo);
 
-void init_lang(notcurses* nc); // nc may be NULL, only used for logging
-int terminfostr(char** gseq, const char* name);
+void init_lang(void);
 
-// load |ti| from the terminfo database, which must already have been
-// initialized. set |utf8| if we've verified UTF8 output encoding.
-int interrogate_terminfo(tinfo* ti, int fd, const char* termname, unsigned utf8);
+int reset_term_attributes(const tinfo* ti, FILE* fp);
 
-void free_terminfo_cache(tinfo* ti);
-
-// perform queries that require writing to the terminal, and reading a
-// response, rather than simply reading the terminfo database. can result
-// in a lengthy delay or even block if the terminal doesn't respond.
-int query_term(tinfo* ti, int fd);
 
 // if there were missing elements we wanted from terminfo, bitch about them here
 void warn_terminfo(const notcurses* nc, const tinfo* ti);
@@ -711,7 +601,7 @@ void warn_terminfo(const notcurses* nc, const tinfo* ti);
 int resize_callbacks_children(ncplane* n);
 
 static inline ncpile*
-ncplane_pile(ncplane* n){
+ncplane_pile(const ncplane* n){
   return n->pile;
 }
 
@@ -729,12 +619,6 @@ static inline const ncplane*
 ncplane_stdplane_const(const ncplane* n){
   return notcurses_stdplane_const(ncplane_notcurses_const(n));
 }
-
-// load all known special keys from terminfo, and build the input sequence trie
-int prep_special_keys(ncinputlayer* nc);
-
-// free up the input escapes trie
-void input_free_esctrie(struct esctrie** trie);
 
 // initialize libav
 int ncvisual_init(int loglevel);
@@ -837,71 +721,6 @@ rgb_greyscale(int r, int g, int b){
   return fg * 255;
 }
 
-// write(2) with retry on partial write or interrupted write
-static inline ssize_t
-writen(int fd, const void* buf, size_t len){
-  ssize_t r;
-  size_t w = 0;
-  while(w < len){
-    if((r = write(fd, (const char*)buf + w, len - w)) < 0){
-      if(errno == EAGAIN || errno == EBUSY || errno == EINTR){
-        continue;
-      }
-      return -1;
-    }
-    w += r;
-  }
-  return w;
-}
-
-static inline int
-tty_emit(const char* seq, int fd){
-  if(!seq){
-    return -1;
-  }
-  size_t slen = strlen(seq);
-  if(writen(fd, seq, slen) < 0){
-    return -1;
-  }
-  return 0;
-}
-
-static inline int
-term_emit(const char* seq, FILE* out, bool flush){
-  if(!seq){
-    return -1;
-  }
-  if(ncfputs(seq, out) == EOF){
-//fprintf(stderr, "Error emitting %zub escape (%s)\n", strlen(seq), strerror(errno));
-    return -1;
-  }
-  if(flush){
-    while(fflush(out) == EOF){
-      if(errno != EAGAIN && errno != EINTR && errno != EBUSY){
-        fprintf(stderr, "Error flushing after %zub sequence (%s)\n", strlen(seq), strerror(errno));
-        return -1;
-      }
-    }
-  }
-  return 0;
-}
-
-static inline int
-term_bg_palindex(const notcurses* nc, FILE* out, unsigned pal){
-  if(nc->tcache.setab == NULL){
-    return 0;
-  }
-  return term_emit(tiparm(nc->tcache.setab, pal), out, false);
-}
-
-static inline int
-term_fg_palindex(const notcurses* nc, FILE* out, unsigned pal){
-  if(nc->tcache.setaf == NULL){
-    return 0;
-  }
-  return term_emit(tiparm(nc->tcache.setaf, pal), out, false);
-}
-
 static inline const char*
 pool_extended_gcluster(const egcpool* pool, const nccell* c){
   if(cell_simple_p(c)){
@@ -911,14 +730,14 @@ pool_extended_gcluster(const egcpool* pool, const nccell* c){
 }
 
 static inline nccell*
-ncplane_cell_ref_yx(ncplane* n, int y, int x){
+ncplane_cell_ref_yx(const ncplane* n, int y, int x){
   return &n->fb[nfbcellidx(n, y, x)];
 }
 
 static inline void
 cell_debug(const egcpool* p, const nccell* c){
   fprintf(stderr, "gcluster: %08x %s style: 0x%04x chan: 0x%016jx\n",
-				  c->gcluster, egcpool_extended_gcluster(p, c), c->stylemask, c->channels);
+          c->gcluster, egcpool_extended_gcluster(p, c), c->stylemask, c->channels);
 }
 
 static inline void
@@ -951,6 +770,7 @@ void sprixel_free(sprixel* s);
 void sprixel_hide(sprixel* s);
 
 int kitty_draw(const ncpile *p, sprixel* s, FILE* out);
+int kitty_move(const ncpile *p, sprixel* s, FILE* out);
 int sixel_draw(const ncpile *p, sprixel* s, FILE* out);
 // dimy and dimx are cell geometry, not pixel.
 sprixel* sprixel_alloc(ncplane* n, int dimy, int dimx);
@@ -961,11 +781,14 @@ int sixel_destroy(const notcurses* nc, const ncpile* p, FILE* out, sprixel* s);
 int kitty_destroy(const notcurses* nc, const ncpile* p, FILE* out, sprixel* s);
 int kitty_remove(int id, FILE* out);
 int kitty_clear_all(int fd);
-int sixel_init(int fd);
+int sixel_init(const tinfo* t, int fd);
+int sixel_init_inverted(const tinfo* t, int fd);
 int sprite_init(const tinfo* t, int fd);
 int sprite_clear_all(const tinfo* t, int fd);
 int kitty_shutdown(int fd);
 int sixel_shutdown(int fd);
+uint8_t* sixel_trans_auxvec(const struct tinfo* ti);
+uint8_t* kitty_trans_auxvec(const struct tinfo* ti);
 // these three all use absolute coordinates
 void sprixel_invalidate(sprixel* s, int y, int x);
 void sprixel_movefrom(sprixel* s, int y, int x);
@@ -978,11 +801,11 @@ void sixelmap_free(struct sixelmap *s);
 // the transparency vector up into 1/8th as many bytes.
 uint8_t* sprixel_auxiliary_vector(const sprixel* s);
 
-int sixel_blit(ncplane* nc, int linesize, const void* data,
-               int leny, int lenx, const blitterargs* bargs);
+int sixel_blit(ncplane* nc, int linesize, const void* data, int leny, int lenx,
+               const blitterargs* bargs, int bpp);
 
-int kitty_blit(ncplane* nc, int linesize, const void* data,
-               int leny, int lenx, const blitterargs* bargs);
+int kitty_blit(ncplane* nc, int linesize, const void* data, int leny, int lenx,
+               const blitterargs* bargs, int bpp);
 
 static inline int
 sprite_destroy(const notcurses* nc, const ncpile* p, FILE* out, sprixel* s){
@@ -990,10 +813,23 @@ sprite_destroy(const notcurses* nc, const ncpile* p, FILE* out, sprixel* s){
 }
 
 // precondition: s->invalidated is SPRIXEL_INVALIDATED or SPRIXEL_MOVED.
+// returns -1 on error, or the number of bytes written.
 static inline int
 sprite_draw(const notcurses* n, const ncpile* p, sprixel* s, FILE* out){
 //sprixel_debug(stderr, s);
   return n->tcache.pixel_draw(p, s, out);
+}
+
+// precondition: s->invalidated is SPRIXEL_MOVED or SPRIXEL_INVALIDATED
+// returns -1 on error, or the number of bytes written.
+static inline int
+sprite_redraw(const notcurses* n, const ncpile* p, sprixel* s, FILE* out){
+//sprixel_debug(stderr, s);
+  if(s->invalidated == SPRIXEL_MOVED && n->tcache.pixel_move){
+    return n->tcache.pixel_move(p, s, out);
+  }else{
+    return n->tcache.pixel_draw(p, s, out);
+  }
 }
 
 static inline int
@@ -1038,7 +874,8 @@ clamp_to_sixelmax(const tinfo* t, int* y, int* x, int* outy, ncscale_e scaling){
   *outy = *y;
   if(*outy % t->sprixel_scale_height){
     *outy += t->sprixel_scale_height - (*outy % t->sprixel_scale_height);
-    while(*outy > t->sixel_maxy){
+    // FIXME use closed form
+    while(t->sixel_maxy && *outy > t->sixel_maxy){
       *outy -= t->sprixel_scale_height;
     }
     if(scaling == NCSCALE_STRETCH || *y > *outy){
@@ -1134,7 +971,8 @@ int ncplane_resize_internal(ncplane* n, int keepy, int keepx,
                             int keepleny, int keeplenx, int yoff, int xoff,
                             int ylen, int xlen);
 
-int update_term_dimensions(int fd, int* rows, int* cols, tinfo* tcache);
+int update_term_dimensions(int fd, int* rows, int* cols, tinfo* tcache,
+                           int margin_b);
 
 ALLOC static inline void*
 memdup(const void* src, size_t len){
@@ -1285,46 +1123,174 @@ int ncvisual_blit(struct ncvisual* ncv, int rows, int cols,
 
 void nclog(const char* fmt, ...);
 
-bool is_linux_console(const notcurses* nc, unsigned no_font_changes);
-
-// get a file descriptor for the controlling tty device, -1 on error
-int get_controlling_tty(FILE* fp);
-
 // logging
-#define logerror(nc, fmt, ...) do{ \
-  if(nc){ if((nc)->loglevel >= NCLOGLEVEL_ERROR){ \
-    nclog("%s:%d:" fmt, __func__, __LINE__, ##__VA_ARGS__); } \
-  }else{ fprintf(stderr, "%s:%d:" fmt, __func__, __LINE__, ##__VA_ARGS__); } \
-}while(0);
+extern int loglevel;
 
-#define logwarn(nc, fmt, ...) do{ \
-  if(nc){ if((nc)->loglevel >= NCLOGLEVEL_WARNING){ \
+#define logerror(fmt, ...) do{ \
+  if(loglevel >= NCLOGLEVEL_ERROR){ \
     nclog("%s:%d:" fmt, __func__, __LINE__, ##__VA_ARGS__); } \
-  }else{ fprintf(stderr, "%s:%d:" fmt, __func__, __LINE__, ##__VA_ARGS__); } \
-}while(0);
+  } while(0);
 
-#define loginfo(nc, fmt, ...) do{ \
-  if(nc){ if((nc)->loglevel >= NCLOGLEVEL_INFO){ \
+#define logwarn(fmt, ...) do{ \
+  if(loglevel >= NCLOGLEVEL_WARNING){ \
     nclog("%s:%d:" fmt, __func__, __LINE__, ##__VA_ARGS__); } \
-  } }while(0);
+  } while(0);
 
-#define logverbose(nc, fmt, ...) do{ \
-  if(nc){ if((nc)->loglevel >= NCLOGLEVEL_VERBOSE){ \
+#define loginfo(fmt, ...) do{ \
+  if(loglevel >= NCLOGLEVEL_INFO){ \
     nclog("%s:%d:" fmt, __func__, __LINE__, ##__VA_ARGS__); } \
-  } }while(0);
+  } while(0);
 
-#define logdebug(nc, fmt, ...) do{ \
-  if(nc){ if((nc)->loglevel >= NCLOGLEVEL_DEBUG){ \
+#define logverbose(fmt, ...) do{ \
+  if(loglevel >= NCLOGLEVEL_VERBOSE){ \
     nclog("%s:%d:" fmt, __func__, __LINE__, ##__VA_ARGS__); } \
-  } }while(0);
+  } while(0);
 
-#define logtrace(nc, fmt, ...) do{ \
-  if(nc){ if((nc)->loglevel >= NCLOGLEVEL_TRACE){ \
+#define logdebug(fmt, ...) do{ \
+  if(loglevel >= NCLOGLEVEL_DEBUG){ \
     nclog("%s:%d:" fmt, __func__, __LINE__, ##__VA_ARGS__); } \
-  } }while(0);
+  } while(0);
 
-int term_setstyle(FILE* out, unsigned cur, unsigned targ, unsigned stylebit,
-                  const char* ton, const char* toff);
+#define logtrace(fmt, ...) do{ \
+  if(loglevel >= NCLOGLEVEL_TRACE){ \
+    nclog("%s:%d:" fmt, __func__, __LINE__, ##__VA_ARGS__); } \
+  } while(0);
+
+// write(2) until we've written it all. uses poll(2) to avoid spinning on
+// EAGAIN, at the possible cost of some small latency.
+static inline int
+blocking_write(int fd, const char* buf, size_t buflen){
+//fprintf(stderr, "writing %zu to %d...\n", buflen, fd);
+  size_t written = 0;
+  while(written < buflen){
+    ssize_t w = write(fd, buf + written, buflen - written);
+    if(w < 0){
+      if(errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR){
+        logerror("Error writing out data on %d (%s)\n", fd, strerror(errno));
+        return -1;
+      }
+    }else{
+      written += w;
+    }
+    if(written < buflen){
+      struct pollfd pfd = {
+        .fd = fd,
+        .events = POLLOUT,
+        .revents = 0,
+      };
+      poll(&pfd, 1, -1);
+    }
+  }
+  return 0;
+}
+
+static inline int
+tty_emit(const char* seq, int fd){
+  if(!seq){
+    return -1;
+  }
+  size_t slen = strlen(seq);
+  if(blocking_write(fd, seq, slen)){
+    return -1;
+  }
+  return 0;
+}
+
+static inline int
+term_emit(const char* seq, FILE* out, bool flush){
+  if(!seq){
+    return -1;
+  }
+  if(ncfputs(seq, out) == EOF){
+//fprintf(stderr, "Error emitting %zub escape (%s)\n", strlen(seq), strerror(errno));
+    return -1;
+  }
+  if(flush){
+    while(fflush(out) == EOF){
+      if(errno != EAGAIN && errno != EINTR && errno != EBUSY){
+        fprintf(stderr, "Error flushing after %zub sequence (%s)\n", strlen(seq), strerror(errno));
+        return -1;
+      }
+    }
+  }
+  return 0;
+}
+
+static inline int
+term_bg_palindex(const notcurses* nc, FILE* out, unsigned pal){
+  const char* setab = get_escape(&nc->tcache, ESCAPE_SETAB);
+  if(setab){
+    return term_emit(tiparm(setab, pal), out, false);
+  }
+  return 0;
+}
+
+static inline int
+term_fg_palindex(const notcurses* nc, FILE* out, unsigned pal){
+  const char* setaf = get_escape(&nc->tcache, ESCAPE_SETAF);
+  if(setaf){
+    return term_emit(tiparm(setaf, pal), out, false);
+  }
+  return 0;
+}
+
+// check the current and target style bitmasks against the specified 'stylebit'.
+// if they are different, and we have the necessary capability, write the
+// applicable terminfo entry to 'out'. returns -1 only on a true error.
+static int
+term_setstyle(FILE* out, unsigned cur, unsigned targ, unsigned stylebit,
+              const char* ton, const char* toff){
+  int ret = 0;
+  unsigned curon = cur & stylebit;
+  unsigned targon = targ & stylebit;
+  if(curon != targon){
+    if(targon){
+      if(ton){
+        ret = term_emit(ton, out, false);
+      }
+    }else{
+      if(toff){ // how did this happen? we can turn it on, but not off?
+        ret = term_emit(toff, out, false);
+      }
+    }
+  }
+  if(ret < 0){
+    return -1;
+  }
+  return 0;
+}
+
+// emit escapes such that the current style is equal to newstyle. if this
+// required an sgr0 (which resets colors), normalized will be non-zero upon
+// a successful return.
+static inline int
+coerce_styles(FILE* out, const tinfo* ti, uint16_t* curstyle,
+              uint16_t newstyle, unsigned* normalized){
+  *normalized = 0; // we never currently use sgr0
+  int ret = 0;
+  ret |= term_setstyle(out, *curstyle, newstyle, NCSTYLE_BLINK,
+                       get_escape(ti, ESCAPE_BLINK), get_escape(ti, ESCAPE_NOBLINK));
+  ret |= term_setstyle(out, *curstyle, newstyle, NCSTYLE_BOLD,
+                       get_escape(ti, ESCAPE_BOLD), get_escape(ti, ESCAPE_NOBOLD));
+  ret |= term_setstyle(out, *curstyle, newstyle, NCSTYLE_ITALIC,
+                       get_escape(ti, ESCAPE_SITM), get_escape(ti, ESCAPE_RITM));
+  ret |= term_setstyle(out, *curstyle, newstyle, NCSTYLE_STRUCK,
+                       get_escape(ti, ESCAPE_SMXX), get_escape(ti, ESCAPE_RMXX));
+  // underline and undercurl are exclusive. if we set one, don't go unsetting
+  // the other.
+  if(newstyle & NCSTYLE_UNDERLINE){ // turn on underline, or do nothing
+    ret |= term_setstyle(out, *curstyle, newstyle, NCSTYLE_UNDERLINE,
+                         get_escape(ti, ESCAPE_SMUL), get_escape(ti, ESCAPE_RMUL));
+  }else if(newstyle & NCSTYLE_UNDERCURL){ // turn on undercurl, or do nothing
+    ret |= term_setstyle(out, *curstyle, newstyle, NCSTYLE_UNDERCURL,
+                         get_escape(ti, ESCAPE_SMULX), get_escape(ti, ESCAPE_SMULNOX));
+  }else{ // turn off any underlining
+    ret |= term_setstyle(out, *curstyle, newstyle, NCSTYLE_UNDERCURL | NCSTYLE_UNDERLINE,
+                         NULL, get_escape(ti, ESCAPE_RMUL));
+  }
+  *curstyle = newstyle;
+  return ret;
+}
 
 // how many edges need touch a corner for it to be printed?
 static inline unsigned
@@ -1422,7 +1388,7 @@ cell_set_fchannel(nccell* cl, uint32_t channel){
 // Palette-indexed colors do not blend. Do not pass me palette-indexed channels!
 static inline unsigned
 channels_blend(unsigned c1, unsigned c2, unsigned* blends){
-  if(ncchannel_alpha(c2) == CELL_ALPHA_TRANSPARENT){
+  if(ncchannel_alpha(c2) == NCALPHA_TRANSPARENT){
     return c1; // do *not* increment *blends
   }
   bool c2default = ncchannel_default_p(c2);
@@ -1505,6 +1471,26 @@ plane_blit_sixel(sprixel* spx, char* s, int bytes, int leny, int lenx,
   return 0;
 }
 
+// is it a control character? check C0 and C1, but don't count empty strings,
+// nor single-byte strings containing only a NUL character.
+static inline bool
+is_control_egc(const unsigned char* egc, int bytes){
+  if(bytes == 1){
+    if(*egc && iscntrl(*egc)){
+      return true;
+    }
+  }else if(bytes == 2){
+    // 0xc2 followed by 0x80--0x9f are controls. 0xc2 followed by <0x80 is
+    // simply invalid utf8.
+    if(egc[0] == 0xc2){
+      if(egc[1] < 0xa0){
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 // lowest level of cell+pool setup. if the EGC changes the output to RTL, it
 // must be suffixed with a LTR-forcing character by now. The four bits of
 // CELL_BLITTERSTACK_MASK ought already be initialized. If gcluster is four
@@ -1513,6 +1499,9 @@ static inline int
 pool_blit_direct(egcpool* pool, nccell* c, const char* gcluster, int bytes, int cols){
   pool_release(pool, c);
   if(bytes < 0 || cols < 0){
+    return -1;
+  }
+  if(is_control_egc((const unsigned char*)gcluster, bytes)){
     return -1;
   }
   c->width = cols;
@@ -1530,7 +1519,7 @@ pool_blit_direct(egcpool* pool, nccell* c, const char* gcluster, int bytes, int 
 }
 
 // Do an RTL-check, reset the quadrant occupancy bits, and pass the cell down to
-// pool_blit_direct().
+// pool_blit_direct(). Returns the number of bytes loaded.
 static inline int
 pool_load_direct(egcpool* pool, nccell* c, const char* gcluster, int bytes, int cols){
   char* rtl = NULL;
@@ -1590,14 +1579,9 @@ cellcmp_and_dupfar(egcpool* dampool, nccell* damcell,
   return 1;
 }
 
-int ncinputlayer_init(ncinputlayer* nilayer, FILE* infp);
-
-// FIXME absorb into ncinputlayer_init()
-int cbreak_mode(int ttyfd, const struct termios* tpreserved);
-
 int set_fd_nonblocking(int fd, unsigned state, unsigned* oldstate);
 
-int get_tty_fd(notcurses* nc, FILE* ttyfp);
+int get_tty_fd(FILE* ttyfp);
 
 // Given the four channels arguments, verify that:
 //
@@ -1632,8 +1616,8 @@ rgba_trans_p(uint32_t p, uint32_t transcolor){
     return true;
   }
   if(transcolor && 
-      (ncpixel_r(p) == (transcolor & 0xff0000ull)) &&
-      (ncpixel_g(p) == (transcolor & 0xff00ull)) &&
+      (ncpixel_r(p) == (transcolor & 0xff0000ull) >> 16) &&
+      (ncpixel_g(p) == (transcolor & 0xff00ull) >> 8) &&
       (ncpixel_b(p) == (transcolor & 0xffull))){
     return true;
   }
@@ -1657,25 +1641,35 @@ ncdirect_channels(const ncdirect* nc){
 }
 
 static inline bool
-ncdirect_fg_default_p(const struct ncdirect* nc){
+ncdirect_fg_default_p(const ncdirect* nc){
   return ncchannels_fg_default_p(ncdirect_channels(nc));
 }
 
 static inline bool
-ncdirect_bg_default_p(const struct ncdirect* nc){
+ncdirect_bg_default_p(const ncdirect* nc){
   return ncchannels_bg_default_p(ncdirect_channels(nc));
 }
 
-int term_fg_rgb8(bool RGBflag, const char* setaf, int colors, FILE* out,
-                 unsigned r, unsigned g, unsigned b);
+static inline bool
+ncdirect_fg_palindex_p(const ncdirect* nc){
+  return ncchannels_fg_palindex_p(ncdirect_channels(nc));
+}
+
+static inline bool
+ncdirect_bg_palindex_p(const ncdirect* nc){
+  return ncchannels_bg_palindex_p(ncdirect_channels(nc));
+}
+
+int term_fg_rgb8(const tinfo* ti, FILE* out, unsigned r, unsigned g, unsigned b);
 
 const struct blitset* lookup_blitset(const tinfo* tcache, ncblitter_e setid, bool may_degrade);
 
 static inline int
 rgba_blit_dispatch(ncplane* nc, const struct blitset* bset,
                    int linesize, const void* data,
-                   int leny, int lenx, const blitterargs* bargs){
-  return bset->blit(nc, linesize, data, leny, lenx, bargs);
+                   int leny, int lenx, const blitterargs* bargs,
+                   int bpp){
+  return bset->blit(nc, linesize, data, leny, lenx, bargs, bpp);
 }
 
 static inline const struct blitset*
@@ -1690,12 +1684,59 @@ rgba_blitter_low(const tinfo* tcache, ncscale_e scale, bool maydegrade,
 // RGBA visuals all use NCBLIT_2x1 by default (or NCBLIT_1x1 if not in
 // UTF-8 mode), but an alternative can be specified.
 static inline const struct blitset*
-rgba_blitter(const struct notcurses* nc, const struct ncvisual_options* opts) {
+rgba_blitter(const struct tinfo* tcache, const struct ncvisual_options* opts) {
   const bool maydegrade = !(opts && (opts->flags & NCVISUAL_OPTION_NODEGRADE));
   const ncscale_e scale = opts ? opts->scaling : NCSCALE_NONE;
-  return rgba_blitter_low(&nc->tcache, scale, maydegrade, opts ? opts->blitter : NCBLIT_DEFAULT);
+  return rgba_blitter_low(tcache, scale, maydegrade, opts ? opts->blitter : NCBLIT_DEFAULT);
 }
 
+// naive resize of |bmap| from |srows|x|scols| -> |drows|x|dcols|, suitable for
+// pixel art. we either select at a constant interval (for shrinking) or duplicate
+// at a constant ratio (for inflation). in the absence of a multimedia engine, this
+// is the only kind of resizing we support.
+static inline uint32_t*
+resize_bitmap(const uint32_t* bmap, int srows, int scols, size_t sstride,
+              int drows, int dcols, size_t dstride){
+  if(sstride < scols * sizeof(*bmap)){
+    return NULL;
+  }
+  if(dstride < dcols * sizeof(*bmap)){
+    return NULL;
+  }
+  // FIXME if parameters match current setup, do nothing, and return bmap
+  size_t size = drows * dstride;
+  uint32_t* ret = (uint32_t*)malloc(size);
+  if(ret == NULL){
+    return NULL;
+  }
+  float xrat = (float)dcols / scols;
+  float yrat = (float)drows / srows;
+  int dy = 0;
+  for(int y = 0 ; y < srows ; ++y){
+    float ytarg = (y + 1) * yrat;
+    if(ytarg > drows){
+      ytarg = drows;
+    }
+    while(ytarg > dy){
+      int dx = 0;
+      for(int x = 0 ; x < scols ; ++x){
+        float xtarg = (x + 1) * xrat;
+        if(xtarg > dcols){
+          xtarg = dcols;
+        }
+        while(xtarg > dx){
+          ret[dy * dstride / sizeof(*ret) + dx] = bmap[y * sstride / sizeof(*ret) + x];
+          ++dx;
+        }
+      }
+      ++dy;
+    }
+  }
+  return ret;
+}
+
+// implemented by a multimedia backend (ffmpeg or oiio), and installed
+// prior to calling notcurses_core_init() (by notcurses_init()).
 typedef struct ncvisual_implementation {
   int (*visual_init)(int loglevel);
   void (*visual_printbanner)(const struct notcurses* nc);
@@ -1712,14 +1753,15 @@ typedef struct ncvisual_implementation {
   int (*visual_stream)(notcurses* nc, struct ncvisual* ncv, float timescale,
                        ncstreamcb streamer, const struct ncvisual_options* vopts, void* curry);
   char* (*visual_subtitle)(const struct ncvisual* ncv);
+  // do a persistent resize, changing the ncv itself
   int (*visual_resize)(struct ncvisual* ncv, int rows, int cols);
   void (*visual_destroy)(struct ncvisual* ncv);
   bool canopen_images;
   bool canopen_videos;
 } ncvisual_implementation;
 
-// assigned by libnotcurses.so if linked with multimedia
-API extern const ncvisual_implementation* visual_implementation;
+// populated by libnotcurses.so if linked with multimedia
+API extern ncvisual_implementation visual_implementation;
 
 #undef ALLOC
 #undef API

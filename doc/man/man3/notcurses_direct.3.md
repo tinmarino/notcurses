@@ -1,6 +1,6 @@
 % notcurses_direct(3)
 % nick black <nickblack@linux.com>
-% v2.3.0
+% v2.3.7
 
 # NAME
 
@@ -14,6 +14,8 @@ notcurses_direct - minimal notcurses instances for styling text
 #define NCDIRECT_OPTION_INHIBIT_SETLOCALE   0x0001ull
 #define NCDIRECT_OPTION_INHIBIT_CBREAK      0x0002ull
 #define NCDIRECT_OPTION_NO_QUIT_SIGHANDLERS 0x0008ull
+#define NCDIRECT_OPTION_VERBOSE             0x0010ull
+#define NCDIRECT_OPTION_VERY_VERBOSE        0x0020ull
 ```
 
 **struct ncdirect* ncdirect_init(const char* ***termtype***, FILE* ***fp***, uint64_t ***flags***);**
@@ -40,11 +42,15 @@ notcurses_direct - minimal notcurses instances for styling text
 
 **int ncdirect_dim_y(const struct ncdirect* ***nc***);**
 
+**unsigned ncdirect_supported_styles(const struct ncdirect* ***nc***);**
+
 **int ncdirect_styles_set(struct ncdirect* ***n***, unsigned ***stylebits***);**
 
 **int ncdirect_styles_on(struct ncdirect* ***n***, unsigned ***stylebits***);**
 
 **int ncdirect_styles_off(struct ncdirect* ***n***, unsigned ***stylebits***);**
+
+**unsigned ncdirect_styles(struct ncdirect* ***n***);**
 
 **int ncdirect_clear(struct ncdirect* ***nc***)**
 
@@ -68,11 +74,7 @@ notcurses_direct - minimal notcurses instances for styling text
 
 **int ncdirect_printf_aligned(struct ncdirect* ***n***, int ***y***, ncalign_e ***align***, const char* ***fmt***, ***...***);**
 
-**bool ncdirect_canopen_images(const struct ncdirect* ***n***);**
-
-**bool ncdirect_canutf8(const struct ncdirect* ***n***);**
-
-**int ncdirect_check_pixel_support(struct ncdirect* ***n***);**
+**const char* ncdirect_detected_terminal(const struct ncdirect* ***n***);**
 
 **int ncdirect_hline_interp(struct ncdirect* ***n***, const char* ***egc***, int ***len***, uint64_t ***h1***, uint64_t ***h2***);**
 
@@ -84,15 +86,62 @@ notcurses_direct - minimal notcurses instances for styling text
 
 **int ncdirect_double_box(struct ncdirect* ***n***, uint64_t ***ul***, uint64_t ***ur***, uint64_t ***ll***, uint64_t ***lr***, int ***ylen***, int ***xlen***, unsigned ***ctlword***);**
 
-**int ncdirect_render_image(struct ncdirect* ***n***, const char* ***filename***, ncblitter_e ***blitter***, ncscale_e ***scale***);**
-
 **ncdirectv* ncdirect_render_frame(struct ncdirect* ***n***, const char* ***filename***, ncblitter_e ***blitter***, ncscale_e ***scale***, int ***maxy***, int ***maxx***);**
+
+**char* ncdirect_readline(struct ncdirect* ***n***, const char* ***prompt***);**
+
+**bool ncdirect_cantruecolor(const struct ncdirect* ***nc***);**
+
+**bool ncdirect_canchangecolor(const struct ncdirect* ***nc***);**
+
+**bool ncdirect_canfade(const struct ncdirect* ***nc***);**
+
+**bool ncdirect_canopen_images(const struct ncdirect* ***nc***);**
+
+**bool ncdirect_canopen_videos(const struct ncdirect* ***nc***);**
+
+**bool ncdirect_canutf8(const struct ncdirect* ***nc***);**
+
+**int ncdirect_check_pixel_support(const struct ncdirect* ***nc***);**
+
+**bool ncdirect_canhalfblock(const struct ncdirect* ***nc***);**
+
+**bool ncdirect_canquadrant(const struct ncdirect* ***nc***);**
+
+**bool ncdirect_cansextant(const struct ncdirect* ***nc***);**
+
+**bool ncdirect_canbraille(const struct ncdirect* ***nc***);**
+
+**bool ncdirect_canget_cursor(const struct ncdirect* ***nc***);**
+
+```c
+typedef struct ncvgeom {
+  int pixy, pixx;     // true pixel geometry of ncvisual data
+  int cdimy, cdimx;   // terminal cell geometry when this was calculated
+  int rpixy, rpixx;   // rendered pixel geometry
+  int rcelly, rcellx; // rendered cell geometry
+  int scaley, scalex; // pixels per filled cell
+  // only defined for NCBLIT_PIXEL
+  int maxpixely, maxpixelx;
+} ncvgeom;
+```
+
+**int ncdirect_render_image(struct ncdirect* ***n***, const char* ***filename***, ncblitter_e ***blitter***, ncscale_e ***scale***);**
 
 **int ncdirect_raster_frame(struct ncdirect* ***n***, ncdirectv* ***ncdv***, ncalign_e ***align***);**
 
 **int ncdirect_stream(struct ncdirect* ***n***, const char* ***filename***, ncstreamcb ***streamer***, struct ncvisual_options* ***vopts***, void* ***curry***);**
 
-**char* ncdirect_readline(struct ncdirect* ***n***, const char* ***prompt***);**
+**int ncdirect_raster_frame(struct ncdirect* ***n***, ncdirectv* ***ncdv***, ncalign_e ***align***);**
+
+**struct ncdirectf* ncdirectf_from_file(struct ncdirect* ***n***, const char* ***filename***);***
+
+**void ncdirectf_free(struct ncdirectf* ***frame***);**
+
+**ncdirectv* ncdirectf_render(struct ncdirect* ***n***, struct ncdirectf* ***frame***, const struct ncvisual_options ***vopts***);**
+
+**int ncdirectf_geom(struct ncdirect* ***n***, struct ncdirectf* ***frame***, const struct ncvisual_options ***vopts***, ncvgeom* ***geom***);**
+
 
 # DESCRIPTION
 
@@ -102,7 +151,8 @@ styling. On success, a pointer to a valid **struct ncdirect** is returned.
 should be called to reset the terminal and free up resources. **ncdirect_init**
 places the terminal into "cbreak" (also known as "rare") mode, disabling
 line-buffering and echo of input. **ncdirect_stop** restores the terminal state
-as it was when the corresponding **ncdirect_init** call was made.
+as it was when the corresponding **ncdirect_init** call was made. A process
+can have only one context active at once.
 
 The following flags are defined:
 
@@ -121,6 +171,12 @@ The following flags are defined:
     installed for **SIGINT**, **SIGILL**, **SIGQUIT**, **SIGSEGV**,
     **SIGTERM**, and **SIGABRT**, cleaning up the terminal on such exceptions.
     With this flag, the handler will not be installed.
+
+* **NCDIRECT_OPTION_VERBOSE**: Enable diagnostics to **stderr** at the level of
+    **NCLOGLEVEL_WARNING**.
+
+* **NCDIRECT_OPTION_VERY_VERBOSE**: Enable all diagnostics (equivalent to
+    **NCLOGLEVEL_TRACE**). Implies **NCDIRECT_OPTION_VERBOSE**.
 
 An appropriate **terminfo(5)** entry must exist for the terminal. This entry is
 usually selected using the value of the **TERM** environment variable (see
@@ -156,6 +212,10 @@ must be supplied to **ncdirect_init**.
 before **NCBLIT_PIXEL** can be used to render images; see
 **notcurses_visual(3)** for more details.
 
+When rendering an image, ***maxy*** and ***maxx*** specify a maximum number
+of (cell) rows and columns to use, respectively. Passing 0 means "use as much
+space as is necessary". It is an error to pass a negative number for either.
+
 # RETURN VALUES
 
 **ncdirect_init** returns **NULL** on failure. Otherwise, the return value
@@ -168,7 +228,16 @@ written on success. On failure, they return some negative number.
 **ncdirect_check_pixel_support** returns -1 on error, 0 if there is no pixel
 support, and 1 if pixel support is successfully detected.
 
+**ncdirect_styles** returns the current styling, a bitmask over the various
+**NCSTYLE_** constants.
+
 All other functions return 0 on success, and non-zero on error.
+
+# NOTES
+
+You are recommended to accept **-v** and **-vv** as command-line options,
+mapping them to **NCDIRECT_OPTION_VERBOSE** and
+**NCDIRECT_OPTION_VERY_VERBOSE** respectively.
 
 # SEE ALSO
 

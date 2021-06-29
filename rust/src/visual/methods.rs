@@ -4,9 +4,9 @@ use core::ptr::null_mut;
 use libc::c_void;
 
 use crate::{
-    cstring, error, error_ref_mut, rstring, NcBlitter, NcDim, NcError, NcIntResult, NcPixel,
-    NcPlane, NcResult, NcRgba, NcScale, NcTime, NcVisual, NcVisualOptions, Notcurses, NCBLIT_PIXEL,
-    NCRESULT_ERR,
+    cstring, error, error_ref_mut, rstring, Nc, NcBlitter, NcComponent, NcDim, NcDirect, NcDirectF,
+    NcError, NcIntResult, NcPixel, NcPlane, NcResult, NcRgba, NcScale, NcTime, NcVGeom, NcVisual,
+    NcVisualOptions, NCBLIT_PIXEL, NCRESULT_ERR,
 };
 
 /// # NcVisualOptions Constructors
@@ -41,7 +41,7 @@ impl NcVisualOptions {
         leny: NcDim,
         lenx: NcDim,
         blitter: NcBlitter,
-        flags: u64,
+        flags: u32,
         transcolor: NcRgba,
     ) -> Self {
         Self {
@@ -60,7 +60,7 @@ impl NcVisualOptions {
             // glyph set to use
             blitter,
             // bitmask over NCVISUAL_OPTION_*
-            flags,
+            flags: flags as u64,
             transcolor,
         }
     }
@@ -73,7 +73,7 @@ impl NcVisualOptions {
         leny: NcDim,
         lenx: NcDim,
         blitter: NcBlitter,
-        flags: u64,
+        flags: u32,
         transcolor: u32,
     ) -> Self {
         Self {
@@ -91,7 +91,7 @@ impl NcVisualOptions {
             // glyph set to use
             blitter,
             // bitmask over NCVISUAL_OPTION_*
-            flags,
+            flags: flags as u64,
             // This color will be treated as transparent with flag [NCVISUAL_OPTION_ADDALPHA].
             transcolor,
         }
@@ -172,6 +172,64 @@ impl NcVisual {
             &format!(
                 "NcVisual::from_file(plane, {}, {}, {}, {}, {})",
                 blitter, beg_y, beg_x, len_y, len_x
+            )
+        ]
+    }
+
+    /// Like [`from_rgba`][NcVisual#method.from_rgba], but the pixels are
+    /// 4-byte RGBX. Alpha is filled in throughout using 'alpha'.
+    ///
+    /// `rowstride` must be a multiple of 4.
+    ///
+    /// *C style function: [ncvisual_from_rgb_loose()][crate::ncvisual_from_rgb_loose].*
+    pub fn from_rgb_loose<'a>(
+        rgb: &[u8],
+        rows: NcDim,
+        rowstride: NcDim,
+        cols: NcDim,
+        alpha: NcComponent,
+    ) -> NcResult<&'a mut NcVisual> {
+        error_ref_mut![
+            unsafe {
+                crate::ncvisual_from_rgb_loose(
+                    rgb.as_ptr() as *const c_void,
+                    rows as i32,
+                    rowstride as i32,
+                    cols as i32,
+                    alpha as i32,
+                )
+            },
+            &format!(
+                "NcVisual::from_rgb_loose(rgba, {}, {}, {}, {})",
+                rows, rowstride, cols, alpha
+            )
+        ]
+    }
+
+    /// Like [`from_rgba`][NcVisual#method.from_rgba], but the pixels are
+    /// 3-byte RGB. Alpha is filled in throughout using 'alpha'.
+    ///
+    /// *C style function: [ncvisual_from_rgb_packed()][crate::ncvisual_from_rgb_packed].*
+    pub fn from_rgb_packed<'a>(
+        rgb: &[u8],
+        rows: NcDim,
+        rowstride: NcDim,
+        cols: NcDim,
+        alpha: NcComponent,
+    ) -> NcResult<&'a mut NcVisual> {
+        error_ref_mut![
+            unsafe {
+                crate::ncvisual_from_rgb_packed(
+                    rgb.as_ptr() as *const c_void,
+                    rows as i32,
+                    rowstride as i32,
+                    cols as i32,
+                    alpha as i32,
+                )
+            },
+            &format!(
+                "NcVisual::from_rgb_packed(rgba, {}, {}, {}, {})",
+                rows, rowstride, cols, alpha
             )
         ]
     }
@@ -263,14 +321,6 @@ impl NcVisual {
         }
     }
 
-    /// Inflates each pixel in the image to 'scale'x'scale' pixels.
-    ///
-    /// The original color is retained.
-    pub fn inflate(&mut self, scale: u32) -> NcResult<NcIntResult> {
-        let res = unsafe { crate::ncvisual_inflate(self, scale as i32) };
-        error![res, &format!["NcVisual.inflate({})", scale], res]
-    }
-
     /// Gets the size and ratio of NcVisual pixels to output cells along the
     /// `y→to_y` and `x→to_x` axes.
     ///
@@ -284,7 +334,7 @@ impl NcVisual {
     /// *C style function: [ncvisual_blitter_geom()][crate::ncvisual_blitter_geom].*
     pub fn geom(
         &self,
-        nc: &Notcurses,
+        nc: &Nc,
         options: &NcVisualOptions,
     ) -> NcResult<(NcDim, NcDim, NcDim, NcDim)> {
         let mut y = 0;
@@ -322,7 +372,7 @@ impl NcVisual {
     ///   aspect ratio, thus NCBLIT_2x1 is used outside of NCSCALE_STRETCH.
     ///
     /// *C style function: [ncvisual_media_defblitter()][crate::ncvisual_media_defblitter].*
-    pub fn media_defblitter(nc: &Notcurses, scale: NcScale) -> NcBlitter {
+    pub fn media_defblitter(nc: &Nc, scale: NcScale) -> NcBlitter {
         unsafe { crate::ncvisual_media_defblitter(nc, scale) }
     }
 
@@ -336,23 +386,19 @@ impl NcVisual {
         ]
     }
 
-    /// Renders the decoded frame to the specified [NcPlane].
+    /// Renders the decoded frame to the specified [`NcPlane`].
     ///
     /// See [`NcVisualOptions`].
     ///
     /// *C style function: [ncvisual_render()][crate::ncvisual_render].*
-    pub fn render(
-        &mut self,
-        nc: &mut Notcurses,
-        options: &NcVisualOptions,
-    ) -> NcResult<&mut NcPlane> {
+    pub fn render(&mut self, nc: &mut Nc, options: &NcVisualOptions) -> NcResult<&mut NcPlane> {
         error_ref_mut![
             unsafe { crate::ncvisual_render(nc, self, options) },
-            "NcVisual.render()"
+            "NcVisual.render(Nc, &NcVisualOptions)"
         ]
     }
 
-    /// Resizes the visual to `rows` X `columns` pixels.
+    /// Resizes the visual to `cols` X `rows` pixels.
     ///
     /// This is a lossy transformation, unless the size is unchanged.
     ///
@@ -361,6 +407,20 @@ impl NcVisual {
         error![
             unsafe { crate::ncvisual_resize(self, rows as i32, cols as i32) },
             &format!["NcVisual.resize({}, {})", rows, cols]
+        ]
+    }
+
+    /// Resizes the visual to  in the image to `rows` X `cols` pixels, without
+    /// interpolating the color values.
+    ///
+    /// The original color is retained.
+    ///
+    /// *C style function:
+    /// [ncvisual_resize_noninterpolative()][crate::ncvisual_resize_noninterpolative].*
+    pub fn resize_noninterpolative(&mut self, rows: NcDim, cols: NcDim) -> NcResult<()> {
+        error![
+            unsafe { crate::ncvisual_resize_noninterpolative(self, rows as i32, cols as i32) },
+            &format!["NcVisual.resize_noninterpolative({}, {})", cols, rows]
         ]
     }
 
@@ -448,7 +508,7 @@ impl NcVisual {
     // //
     // pub fn simple_streamer(
     //     &mut self,
-    //     nc: &mut Notcurses,
+    //     nc: &mut Nc,
     //     timescale: f32,
     //     //streamer: Option<streamcb>
     //     options: &NcVisualOptions,
@@ -466,6 +526,93 @@ impl NcVisual {
             Ok(rstring![res])
         } else {
             Err(NcError::with_msg(NCRESULT_ERR, "NcVisual.subtitle()"))
+        }
+    }
+}
+
+/// # NcDirectF Constructors & destructors
+impl NcDirectF {
+    /// Loads media from disk, but do not yet renders it (presumably because you
+    /// want to get its geometry via [ncdirectf_geom()][0], or to use the same
+    /// file with [ncdirectf_render()][1] multiple times).
+    ///
+    /// You must destroy the result with [ncdirectf_free()][2];
+    ///
+    /// [0]: crate::NcDirectF#method.ncdirectf_geom
+    /// [1]: crate::NcDirectF#method.ncdirectf_render
+    /// [2]: crate::NcDirectF#method.ncdirectf_free
+    ///
+    /// *C style function: [ncdirectf_from_file()][crate::ncdirectf_from_file].*
+    pub fn ncdirectf_from_file<'a>(ncd: &mut NcDirect, file: &str) -> NcResult<&'a mut NcDirectF> {
+        error_ref_mut![
+            unsafe { crate::ncdirectf_from_file(ncd, cstring![file]) },
+            &format!("NcDirectF::ncdirectf_from_file(ncd, {})", file)
+        ]
+    }
+
+    /// Frees a [`NcDirectF`] returned from [ncdirectf_from_file()][0].
+    ///
+    /// [0]: crate::NcDirectF#method.ncdirectf_from_file
+    ///
+    /// *C style function: [ncdirectf_free()][crate::ncdirectf_free].*
+    pub fn ncdirectf_free(&mut self) {
+        unsafe { crate::ncdirectf_free(self) };
+    }
+}
+
+/// # NcDirectF Methods
+impl NcDirectF {
+    /// Same as [`NcDirect.render_frame()`][0], except `frame` must already have
+    /// been loaded.
+    ///
+    /// A loaded frame may be rendered in different ways before it is destroyed.
+    ///
+    /// [0]: NcDirect#method.render_frame
+    ///
+    /// *C style function: [ncvisual_render()][crate::ncvisual_render].*
+    pub fn ncdirectf_render(
+        &mut self,
+        ncd: &mut NcDirect,
+        options: &NcVisualOptions,
+    ) -> NcResult<&mut NcPlane> {
+        error_ref_mut![
+            unsafe { crate::ncdirectf_render(ncd, self, options) },
+            "NcVisual.render()"
+        ]
+    }
+    /// Having loaded the `frame`, get the geometry of a potential render.
+    ///
+    /// *C style function: [ncdirectf_geom()][crate::ncdirectf_geom].*
+    pub fn ncdirectf_geom(
+        &mut self,
+        ncd: &mut NcDirect,
+        options: &NcVisualOptions,
+    ) -> NcResult<NcVGeom> {
+        let mut geom = NcVGeom::new();
+
+        let res = unsafe { crate::ncdirectf_geom(ncd, self, options, &mut geom) };
+        error![res, "NcDirectF.ncdirectf_geom()", geom];
+    }
+}
+
+/// # NcVGeom Constructors
+impl NcVGeom {
+    /// Returns a new `NcVGeom` with zeroed fields.
+    pub fn new() -> Self {
+        Self {
+            pixy: 0,
+            pixx: 0,
+            cdimy: 0,
+            cdimx: 0,
+            rpixy: 0,
+            rpixx: 0,
+            rcelly: 0,
+            rcellx: 0,
+            scaley: 0,
+            scalex: 0,
+            maxpixely: 0,
+            maxpixelx: 0,
+            blitter: 0,
         }
     }
 }

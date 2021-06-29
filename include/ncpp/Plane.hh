@@ -472,10 +472,10 @@ namespace ncpp
 
 		bool mergedown_simple (Plane *dst) const
 		{
-			if (dst != nullptr && plane == dst->plane)
+			if (dst == nullptr || plane == dst->plane)
 				throw invalid_argument ("'dst' must refer to a different plane than the one this method is called on");
 
-			return error_guard (ncplane_mergedown_simple (plane, dst != nullptr ? dst->plane : nullptr), -1);
+			return error_guard (ncplane_mergedown_simple (plane, dst->plane), -1);
 		}
 
 		bool cursor_move (int y, int x) const NOEXCEPT_MAYBE
@@ -1201,7 +1201,6 @@ namespace ncpp
 			return nccell_extract (plane, cell, stylemask, channels);
 		}
 
-		// FIXME these can except if fed a sprixel, right (returns NULL)?
 		const char* get_extended_gcluster (Cell &cell) const noexcept
 		{
 			return nccell_extended_gcluster (plane, cell);

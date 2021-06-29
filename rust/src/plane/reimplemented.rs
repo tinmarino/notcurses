@@ -3,8 +3,8 @@
 use core::ptr::null_mut;
 
 use crate::{
-    cstring, nccell_release, NcAlign, NcAlphaBits, NcBoxMask, NcCell, NcChannel, NcChannelPair,
-    NcColor, NcDim, NcEgc, NcIntResult, NcPlane, NcRgb, NcStyleMask, NCRESULT_ERR, NCRESULT_OK,
+    cstring, nccell_release, NcAlign, NcAlphaBits, NcBoxMask, NcCell, NcChannel, NcChannels,
+    NcComponent, NcDim, NcIntResult, NcPlane, NcRgb, NcStyle, NCRESULT_ERR, NCRESULT_OK,
 };
 
 // Alpha -----------------------------------------------------------------------
@@ -44,65 +44,65 @@ pub fn ncplane_bchannel(plane: &NcPlane) -> NcChannel {
 }
 
 /// Sets the foreground [NcChannel] on an [NcPlane],
-/// and returns the new [NcChannelPair].
+/// and returns the new [NcChannels].
 ///
 /// *Method: NcPlane.[set_fchannel()][NcPlane#method.set_fchannel].*
 #[inline]
-pub fn ncplane_set_fchannel(plane: &mut NcPlane, channel: NcChannel) -> NcChannelPair {
+pub fn ncplane_set_fchannel(plane: &mut NcPlane, channel: NcChannel) -> NcChannels {
     unsafe { crate::ffi::ncplane_set_fchannel(plane, channel) }
 }
 
 /// Sets the background [NcChannel] on an [NcPlane],
-/// and returns the new [NcChannelPair].
+/// and returns the new [NcChannels].
 ///
 /// *Method: NcPlane.[set_bchannel()][NcPlane#method.set_bchannel].*
 #[inline]
-pub fn ncplane_set_bchannel(plane: &mut NcPlane, channel: NcChannel) -> NcChannelPair {
+pub fn ncplane_set_bchannel(plane: &mut NcPlane, channel: NcChannel) -> NcChannels {
     unsafe { crate::ffi::ncplane_set_bchannel(plane, channel) }
 }
 
-/// Gets the [NcChannelPair] of an [NcPlane].
+/// Gets the [NcChannels] of an [NcPlane].
 ///
 /// *Method: NcPlane.[channels()][NcPlane#method.channels].*
 #[inline]
-pub fn ncplane_channels(plane: &NcPlane) -> NcChannelPair {
+pub fn ncplane_channels(plane: &NcPlane) -> NcChannels {
     unsafe { crate::ffi::ncplane_channels(plane) }
 }
 
-/// Sets the [NcChannelPair] of an [NcPlane].
+/// Sets the [NcChannels] of an [NcPlane].
 ///
 /// *Method: NcPlane.[set_channels()][NcPlane#method.set_channels].*
 #[inline]
-pub fn ncplane_set_channels(plane: &mut NcPlane, channels: NcChannelPair) {
+pub fn ncplane_set_channels(plane: &mut NcPlane, channels: NcChannels) {
     unsafe { crate::ffi::ncplane_set_channels(plane, channels) };
 }
 
-// NcColor ---------------------------------------------------------------------
+// NcComponent ---------------------------------------------------------------------
 
-/// Gets the foreground [NcColor] RGB components from an [NcPlane].
+/// Gets the foreground RGB [NcComponent]s from an [NcPlane].
 /// and returns the background [NcChannel].
 ///
 /// *Method: NcPlane.[fg_rgb8()][NcPlane#method.fg_rgb8].*
 #[inline]
 pub fn ncplane_fg_rgb8(
     plane: &NcPlane,
-    red: &mut NcColor,
-    green: &mut NcColor,
-    blue: &mut NcColor,
+    red: &mut NcComponent,
+    green: &mut NcComponent,
+    blue: &mut NcComponent,
 ) -> NcChannel {
     crate::ncchannels_fg_rgb8(ncplane_channels(plane), red, green, blue)
 }
 
-/// Gets the background [NcColor] RGB components from an [NcPlane],
+/// Gets the background RGB [NcComponent]s from an [NcPlane],
 /// and returns the background [NcChannel].
 ///
 /// *Method: NcPlane.[bg_rgb8()][NcPlane#method.bg_rgb8].*
 #[inline]
 pub fn ncplane_bg_rgb8(
     plane: &NcPlane,
-    red: &mut NcColor,
-    green: &mut NcColor,
-    blue: &mut NcColor,
+    red: &mut NcComponent,
+    green: &mut NcComponent,
+    blue: &mut NcComponent,
 ) -> NcChannel {
     crate::ncchannels_bg_rgb8(ncplane_channels(plane), red, green, blue)
 }
@@ -144,50 +144,50 @@ pub fn ncplane_bg_default_p(plane: &NcPlane) -> bool {
 }
 
 /// Marks both the foreground and background as using the "default color",
-/// and returns the new [NcChannelPair].
+/// and returns the new [NcChannels].
 ///
 /// *Method: NcPlane.[set_default()][NcPlane#method.set_default].*
 //
 // Not in the C API.
 #[inline]
-pub fn ncplane_set_default(plane: &mut NcPlane) -> NcChannelPair {
+pub fn ncplane_set_default(plane: &mut NcPlane) -> NcChannels {
     let channels = crate::ncchannels_set_default(&mut ncplane_channels(plane));
     ncplane_set_channels(plane, channels);
     channels
 }
 
 /// Marks both the foreground and background as NOT using the "default color",
-/// and returns the new [NcChannelPair].
+/// and returns the new [NcChannels].
 ///
 /// *Method: NcPlane.[set_not_default()][NcPlane#method.set_not_default].*
 //
 // Not in the C API.
 #[inline]
-pub fn ncplane_set_not_default(plane: &mut NcPlane) -> NcChannelPair {
+pub fn ncplane_set_not_default(plane: &mut NcPlane) -> NcChannels {
     let channels = crate::ncchannels_set_not_default(&mut ncplane_channels(plane));
     crate::ncplane_set_channels(plane, channels);
     channels
 }
 
 /// Marks the foreground as NOT using the "default color",
-/// and returns the new [NcChannelPair].
+/// and returns the new [NcChannels].
 ///
 /// *Method: NcPlane.[set_fg_not_default()][NcPlane#method.set_fg_not_default].*
 //
 // Not in the C API.
 #[inline]
-pub fn ncplane_set_fg_not_default(plane: &NcPlane) -> NcChannelPair {
+pub fn ncplane_set_fg_not_default(plane: &NcPlane) -> NcChannels {
     crate::ncchannels_set_fg_not_default(&mut ncplane_channels(plane))
 }
 
 /// Marks the background as NOT using the "default color",
-/// and returns the new [NcChannelPair].
+/// and returns the new [NcChannels].
 ///
 /// *Method: NcPlane.[set_bg_not_default()][NcPlane#method.set_bg_not_default].*
 //
 // Not in the C API.
 #[inline]
-pub fn ncplane_set_bg_not_default(plane: &NcPlane) -> NcChannelPair {
+pub fn ncplane_set_bg_not_default(plane: &NcPlane) -> NcChannels {
     crate::ncchannels_set_bg_not_default(&mut ncplane_channels(plane))
 }
 
@@ -207,7 +207,7 @@ pub fn ncplane_putc(plane: &mut NcPlane, cell: &NcCell) -> NcIntResult {
 #[inline]
 pub fn ncplane_putchar(plane: &mut NcPlane, ch: char) -> NcIntResult {
     unsafe {
-        let cell = NcCell::with_char(ch, plane);
+        let cell = NcCell::from_char(ch, plane);
         crate::ncplane_putc_yx(plane, -1, -1, &cell)
     }
 }
@@ -219,12 +219,12 @@ pub fn ncplane_putchar(plane: &mut NcPlane, ch: char) -> NcIntResult {
 #[inline]
 pub fn ncplane_putchar_yx(plane: &mut NcPlane, y: NcDim, x: NcDim, ch: char) -> NcIntResult {
     unsafe {
-        let cell = NcCell::with_char(ch, plane);
+        let cell = NcCell::from_char(ch, plane);
         crate::ncplane_putc_yx(plane, y as i32, x as i32, &cell)
     }
 }
 
-/// Writes a series of [NcEgc]s to the current location, using the current style.
+/// Writes a series of `EGC`s to the current location, using the current style.
 ///
 /// Advances the cursor by some positive number of columns
 /// (though not beyond the end of the plane),
@@ -410,8 +410,8 @@ pub fn ncplane_perimeter(
 #[inline]
 pub fn ncplane_perimeter_double(
     plane: &mut NcPlane,
-    stylemask: NcStyleMask,
-    channels: NcChannelPair,
+    stylemask: NcStyle,
+    channels: NcChannels,
     boxmask: NcBoxMask,
 ) -> NcIntResult {
     if unsafe { crate::ncplane_cursor_move_yx(plane, 0, 0) } != NCRESULT_OK {
@@ -472,8 +472,8 @@ pub fn ncplane_perimeter_double(
 #[inline]
 pub fn ncplane_perimeter_rounded(
     plane: &mut NcPlane,
-    stylemask: NcStyleMask,
-    channels: NcChannelPair,
+    stylemask: NcStyle,
+    channels: NcChannels,
     boxmask: NcBoxMask,
 ) -> NcIntResult {
     if unsafe { crate::ncplane_cursor_move_yx(plane, 0, 0) } != NCRESULT_OK {
@@ -575,8 +575,8 @@ pub fn ncplane_box_sized(
 #[inline]
 pub fn ncplane_double_box(
     plane: &mut NcPlane,
-    stylemask: NcStyleMask,
-    channels: NcChannelPair,
+    stylemask: NcStyle,
+    channels: NcChannels,
     y_stop: NcDim,
     x_stop: NcDim,
     boxmask: NcBoxMask,
@@ -634,8 +634,8 @@ pub fn ncplane_double_box(
 #[inline]
 pub fn ncplane_double_box_sized(
     plane: &mut NcPlane,
-    stylemask: NcStyleMask,
-    channels: NcChannelPair,
+    stylemask: NcStyle,
+    channels: NcChannels,
     y_len: NcDim,
     x_len: NcDim,
     boxmask: NcBoxMask,
@@ -660,8 +660,8 @@ pub fn ncplane_double_box_sized(
 #[inline]
 pub fn ncplane_rounded_box(
     plane: &mut NcPlane,
-    stylemask: NcStyleMask,
-    channels: NcChannelPair,
+    stylemask: NcStyle,
+    channels: NcChannels,
     y_stop: NcDim,
     x_stop: NcDim,
     boxmask: NcBoxMask,
@@ -718,8 +718,8 @@ pub fn ncplane_rounded_box(
 #[inline]
 pub fn ncplane_rounded_box_sized(
     plane: &mut NcPlane,
-    stylemask: NcStyleMask,
-    channels: NcChannelPair,
+    stylemask: NcStyle,
+    channels: NcChannels,
     y_len: NcDim,
     x_len: NcDim,
     boxmask: NcBoxMask,
@@ -740,6 +740,65 @@ pub fn ncplane_rounded_box_sized(
 
 // gradient --------------------------------------------------------------------
 
+/// Draws a gradient with its upper-left corner at the current cursor position,
+/// stopping at `ystop`×`xstop`.
+///
+/// The glyph composed of `egc` and `stylemask` is used for all cells. The
+/// `NcChannels` specified by `ul`, `ur`, `ll`, and `lr` are composed into
+/// foreground and background gradients.
+///
+/// - To do a vertical gradient, `ul` ought equal `ur` and `ll` ought equal `lr`.
+/// - To do a horizontal gradient, `ul` ought equal `ll` and `ur` ought equal `ul`.
+/// - To color everything the same, all four channels should be equivalent. The
+/// resulting alpha values are equal to incoming alpha values. Returns the number
+/// of cells filled on success, or -1 on failure.
+///
+/// Palette-indexed color is not supported.
+///
+/// Preconditions for gradient operations (error otherwise):
+/// - all: only RGB colors, unless all four channels match as default
+/// - all: all alpha values must be the same
+/// - 1x1: all four colors must be the same
+/// - 1xN: both top and both bottom colors must be the same (vertical gradient)
+/// - Nx1: both left and both right colors must be the same (horizontal gradient)
+///
+/// *Method: NcPlane.[gradient()][NcPlane#method.gradient].*
+#[inline]
+pub fn ncplane_gradient(
+    plane: &mut NcPlane,
+    egc: &str,
+    stylemask: NcStyle,
+    ul: NcChannels,
+    ur: NcChannels,
+    ll: NcChannels,
+    lr: NcChannels,
+    y_len: NcDim,
+    x_len: NcDim,
+) -> NcIntResult {
+    if y_len < 1 || x_len < 1 {
+        return NCRESULT_ERR;
+    }
+
+    #[cfg(any(target_arch = "armv7l", target_arch = "i686"))]
+    let egc_ptr = cstring![egc] as *const i8;
+    #[cfg(not(any(target_arch = "armv7l", target_arch = "i686")))]
+    let egc_ptr = cstring![egc];
+
+    unsafe {
+        crate::bindings::ffi::ncplane_gradient(
+            plane,
+            egc_ptr,
+            stylemask as u32,
+            ul,
+            ur,
+            ll,
+            lr,
+            y_len as i32,
+            x_len as i32,
+        )
+    }
+}
+
 /// Draw a gradient with its upper-left corner at the current cursor position,
 /// having dimensions `y_len` * `x_len`.
 ///
@@ -749,37 +808,31 @@ pub fn ncplane_rounded_box_sized(
 #[inline]
 pub fn ncplane_gradient_sized(
     plane: &mut NcPlane,
-    egc: &NcEgc,
-    stylemask: NcStyleMask,
-    ul: NcChannel,
-    ur: NcChannel,
-    ll: NcChannel,
-    lr: NcChannel,
+    egc: &str,
+    stylemask: NcStyle,
+    ul: NcChannels,
+    ur: NcChannels,
+    ll: NcChannels,
+    lr: NcChannels,
     y_len: NcDim,
     x_len: NcDim,
 ) -> NcIntResult {
     if y_len < 1 || x_len < 1 {
         return NCRESULT_ERR;
     }
-    // https://github.com/dankamongmen/notcurses/issues/1339
-    #[cfg(any(target_arch = "x86_64", target_arch = "i686"))]
-    let egc_ptr = &(*egc as i8);
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "i686")))]
-    let egc_ptr = &(*egc as u8);
-
     let (mut y, mut x) = (0, 0);
     unsafe {
         crate::ncplane_cursor_yx(plane, &mut y, &mut x);
-        crate::ncplane_gradient(
+        ncplane_gradient(
             plane,
-            egc_ptr,
-            stylemask as u32,
-            ul as u64,
-            ur as u64,
-            ll as u64,
-            lr as u64,
-            y + y_len as i32 - 1,
-            x + x_len as i32 - 1,
+            egc,
+            stylemask,
+            ul,
+            ur,
+            ll,
+            lr,
+            y as u32 + y_len - 1,
+            x as u32 + x_len - 1,
         )
     }
 }

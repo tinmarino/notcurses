@@ -1,20 +1,28 @@
-// functions already exported by bindgen : 18
+// functions already exported by bindgen : 26
 // -----------------------------------------
-// (W) wrap: 18
+// (W) wrap: 22
 // (#) test: 0
 // -----------------------------------------
+//W  ncdirectf_free
+//W  ncdirectf_from_file
+//   ncdirectf_geom
+//   ncdirectf_render
 //W  ncvisual_at_yx
 //W  ncvisual_decode
 //W  ncvisual_decode_loop
+//   ncvisual_default_blitter
 //W  ncvisual_destroy
 //W  ncvisual_from_bgra
 //W  ncvisual_from_file
 //W  ncvisual_from_plane
 //W  ncvisual_from_rgba
+//W  ncvisual_from_rgb_packed
+//W  ncvisual_from_rgb_loose
 //W  ncvisual_inflate
 //W  ncvisual_blitter_geom
 //W  ncvisual_media_defblitter
 //W  ncvisual_polyfill_yx
+//   ncvisual_plane_create
 //W  ncvisual_render
 //W  ncvisual_resize
 //W  ncvisual_rotate
@@ -28,30 +36,44 @@ use crate::{NcChannel, NcDim, NcRgb};
 
 mod methods;
 
-/// How to scale an [`NcVisual`] during rendering
+/// Indicates how to scale an [`NcVisual`] during rendering.
 ///
-/// - NCSCALE_NONE will apply no scaling.
-/// - NCSCALE_SCALE scales a visual to the plane's size,
+/// - [`NCSCALE_NONE`] will apply no scaling.
+/// - [`NCSCALE_SCALE`] scales a visual to the plane's size,
 ///   maintaining aspect ratio.
-/// - NCSCALE_STRETCH stretches and scales the image in an
+/// - [`NCSCALE_STRETCH`] stretches and scales the image in an
 ///   attempt to fill the entirety of the plane.
+/// - [`NCSCALE_NONE_HIRES`] like `NCSCALE_NONE` admitting high-res blitters.
+/// - [`NCSCALE_SCALE_HIRES`] like `NCSCALE_SCALE` admitting high-res blitters.
+///
+/// The `NCSCALE_*` preferences are applied only for the context of
+/// [`NcVisual.render`][NcVisual#method.render]. You can think of it as a pipeline:
+///
+/// ```txt
+/// NcVisual::fromfile() → frame → NcVisual.render() → scaling → output frame → blit
+/// ```
+///
+/// where you still have the original frame. Whereas
+/// [`NcVisual.resize`][NcVisual#method.resize] and
+/// [`NcVisual.resize_noninterpolative`][NcVisual#method.resize_noninterpolative]
+/// are changing that original frame.
 ///
 pub type NcScale = crate::bindings::ffi::ncscale_e;
 
-/// Maintain original size.
+/// Maintains original size.
 pub const NCSCALE_NONE: NcScale = crate::bindings::ffi::ncscale_e_NCSCALE_NONE;
 
-/// Maintain aspect ratio.
+/// Maintains aspect ratio.
 pub const NCSCALE_SCALE: NcScale = crate::bindings::ffi::ncscale_e_NCSCALE_SCALE;
 
-/// Throw away aspect ratio.
+/// Throws away aspect ratio.
 pub const NCSCALE_STRETCH: NcScale = crate::bindings::ffi::ncscale_e_NCSCALE_STRETCH;
 
-/// Maintain original size, admitting high-resolution blitters
+/// Maintains original size, admitting high-resolution blitters
 /// that don't preserve aspect ratio.
 pub const NCSCALE_NONE_HIRES: NcScale = crate::bindings::ffi::ncscale_e_NCSCALE_NONE_HIRES;
 
-/// Maintain aspect ratio, admitting high-resolution blitters
+/// Maintains aspect ratio, admitting high-resolution blitters
 /// that don't preserve aspect ratio.
 pub const NCSCALE_SCALE_HIRES: NcScale = crate::bindings::ffi::ncscale_e_NCSCALE_SCALE_HIRES;
 
@@ -60,10 +82,27 @@ pub const NCSCALE_SCALE_HIRES: NcScale = crate::bindings::ffi::ncscale_e_NCSCALE
 /// It can be constructed from a rgba or bgra buffer.
 ///
 /// The [NcVisualOptions] structure is used only by the following methods:
-/// - [.geom][NcVisual#method.render]
+/// - [.geom][NcVisual#method.geom]
 /// - [.render][NcVisual#method.render]
-/// - [.simple_streamer][NcVisual#method.render]
+/// - [.simple_streamer][NcVisual#method.simple_streamer]
 pub type NcVisual = crate::bindings::ffi::ncvisual;
+
+/// A type alias of [`NcVisual`] (NcDirect ***F**rame*) intended to be used
+/// with its `ncdirectf_*` methods, in [`NcDirect`][crate::NcDirect] mode.
+pub type NcDirectF = NcVisual;
+
+/// Describes all geometries of an [`NcVisual`] ncvisual–both those which are inherent, and
+/// those in a given rendering regime.
+///
+/// *FIXME this ought be used in the rendered mode API as well;
+/// it’s currently only used by direct mode.*
+/// *(See [ncvgeom][1] more more information)*
+///
+/// This is the return type of the [NcDirectF.ncdirectf_geom()][0] method.
+///
+/// [0]: NcDirectF#method.ncdirectf_geom
+/// [1]: crate::bindings::ffi::ncvgeom
+pub type NcVGeom = crate::bindings::ffi::ncvgeom;
 
 /// Options struct for [`NcVisual`]
 ///
@@ -109,10 +148,15 @@ pub type NcRgba = u32;
 /// Treats as transparent the color specified in the `transcolor` field.
 pub const NCVISUAL_OPTION_ADDALPHA: u32 = crate::bindings::ffi::NCVISUAL_OPTION_ADDALPHA;
 
-/// Uses [`NCCELL_ALPHA_BLEND`][crate::NCCELL_ALPHA_BLEND] with visual.
+/// Uses [`NCALPHA_BLEND`][crate::NCALPHA_BLEND] with visual.
 pub const NCVISUAL_OPTION_BLEND: u32 = crate::bindings::ffi::NCVISUAL_OPTION_BLEND;
 
-/// allows you to indicate that the n field of ncvisual_options refers not to the plane onto which you'd like to blit, but the parent of a new plane. A plane will be created using the other parameters in the ncvisual_options, as a child of this parent. This means things like, say, vertically centering a sprixel relative to the standard plane can be done in one step
+/// allows you to indicate that the n field of ncvisual_options refers not to
+/// the plane onto which you'd like to blit, but the parent of a new plane.
+///
+/// A plane will be created using the other parameters in the ncvisual_options,
+/// as a child of this parent. This means things like, say, vertically centering
+/// a sprixel relative to the standard plane can be done in one step.
 pub const NCVISUAL_OPTION_CHILDPLANE: u32 = crate::bindings::ffi::NCVISUAL_OPTION_CHILDPLANE;
 
 /// Fails rather than gracefully degrade. See [NcBlitter].
@@ -124,7 +168,10 @@ pub const NCVISUAL_OPTION_VERALIGNED: u32 = crate::bindings::ffi::NCVISUAL_OPTIO
 /// X is an alignment, not absolute.
 pub const NCVISUAL_OPTION_HORALIGNED: u32 = crate::bindings::ffi::NCVISUAL_OPTION_HORALIGNED;
 
-/// Blitter Mode (`NCBLIT_*`)
+/// Uses non-interpolative scaling.
+pub const NCVISUAL_OPTION_NOINTERPOLATE: u32 = crate::bindings::ffi::NCVISUAL_OPTION_NOINTERPOLATE;
+
+/// The blitter mode to use for rasterizing an [`NcVisual`].
 ///
 /// We never blit full blocks, but instead spaces (more efficient) with the
 /// background set to the desired foreground.
@@ -196,8 +243,8 @@ pub const NCBLIT_PIXEL: NcBlitter = crate::bindings::ffi::ncblitter_e_NCBLIT_PIX
 #[derive(Clone, Debug)]
 pub struct NcPixelGeometry {
     /// Geometry of the display region
-    pub display_y: NcDim,
-    pub display_x: NcDim,
+    pub term_y: NcDim,
+    pub term_x: NcDim,
     pub cell_y: NcDim,
     pub cell_x: NcDim,
     pub max_bitmap_y: NcDim,

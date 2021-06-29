@@ -584,7 +584,7 @@ NcPlane_putchar_yx(NcPlaneObject *self, PyObject *args)
     int y = 0, x = 0;
     const char *c_str = NULL;
 
-    GNU_PY_CHECK_BOOL(PyArg_ParseTuple(args, "s", &c_str));
+    GNU_PY_CHECK_BOOL(PyArg_ParseTuple(args, "iis", &y, &x, &c_str));
 
     CHECK_NOTCURSES(ncplane_putchar_yx(self->ncplane_ptr, y, x, c_str[0]));
 
@@ -1657,6 +1657,51 @@ NcPlane_pile_rasterize(NcPlaneObject *self, PyObject *Py_UNUSED(args))
     Py_RETURN_NONE;
 }
 
+static void cleanup_char_buffer(char **buffer_ptr)
+{
+    if (NULL != buffer_ptr)
+    {
+        free(*buffer_ptr);
+    }
+}
+
+static PyObject *
+NcPlane_pile_render_to_buffer(NcPlaneObject *self, PyObject *Py_UNUSED(args))
+{
+    char *buffer __attribute__((cleanup(cleanup_char_buffer))) = NULL;
+    size_t buffer_len = 0;
+
+    CHECK_NOTCURSES(ncpile_render_to_buffer(self->ncplane_ptr, &buffer, &buffer_len));
+
+    return PyBytes_FromStringAndSize(buffer, (Py_ssize_t)buffer_len);
+}
+
+static void cleanup_file(FILE **file_to_close)
+{
+    if (NULL != file_to_close)
+    {
+        fclose(*file_to_close);
+    }
+}
+
+static PyObject *
+NcPlane_pile_render_to_file(NcPlaneObject *self, PyObject *args)
+{
+    int fd = INT_MAX;
+    GNU_PY_CHECK_BOOL(PyArg_ParseTuple(args, "i", &fd));
+
+    FILE *new_render_file __attribute__((cleanup(cleanup_file))) = fdopen(fd, "w");
+
+    if (NULL == new_render_file)
+    {
+        return PyErr_SetFromErrno(PyExc_RuntimeError);
+    }
+
+    CHECK_NOTCURSES(ncpile_render_to_file(self->ncplane_ptr, new_render_file));
+
+    Py_RETURN_NONE;
+}
+
 /*
 static PyObject *
 NcPlane_(NcPlaneObject *self, PyObject *args)
@@ -1692,15 +1737,15 @@ static PyMethodDef NcPlane_methods[] = {
     {"base", (PyCFunction)NcPlane_base, METH_NOARGS, PyDoc_STR("Extract the ncplane's base nccell.")},
 
     {"move_yx", (PyCFunction)NcPlane_move_yx, METH_VARARGS, PyDoc_STR("Move this plane relative to the standard plane, or the plane to which it is bound (if it is bound to a plane).")},
-    {"yx", (PyCFunction)NcPlane_yx, METH_NOARGS, PyDoc_STR("Get the origin of plane 'n' relative to its bound plane, or pile.")},
-    {"y", (PyCFunction)NcPlane_y, METH_NOARGS, PyDoc_STR("Get the Y origin of plane 'n' relative to its bound plane, or pile.")},
-    {"x", (PyCFunction)NcPlane_x, METH_NOARGS, PyDoc_STR("Get the X origin of plane 'n' relative to its bound plane, or pile.")},
-    {"abs_yx", (PyCFunction)NcPlane_abs_yx, METH_NOARGS, PyDoc_STR("Get the origin of plane 'n' relative to its pile.")},
-    {"abs_y", (PyCFunction)NcPlane_abs_y, METH_NOARGS, PyDoc_STR("Get the Y origin of plane 'n' relative to its pile.")},
-    {"abs_x", (PyCFunction)NcPlane_abs_x, METH_NOARGS, PyDoc_STR("Get the X origin of plane 'n' relative to its pile.")},
+    {"yx", (PyCFunction)NcPlane_yx, METH_NOARGS, PyDoc_STR("Get the origin of plane relative to its bound plane, or pile.")},
+    {"y", (PyCFunction)NcPlane_y, METH_NOARGS, PyDoc_STR("Get the Y origin of plane relative to its bound plane, or pile.")},
+    {"x", (PyCFunction)NcPlane_x, METH_NOARGS, PyDoc_STR("Get the X origin of plane relative to its bound plane, or pile.")},
+    {"abs_yx", (PyCFunction)NcPlane_abs_yx, METH_NOARGS, PyDoc_STR("Get the origin of plane relative to its pile.")},
+    {"abs_y", (PyCFunction)NcPlane_abs_y, METH_NOARGS, PyDoc_STR("Get the Y origin of plane relative to its pile.")},
+    {"abs_x", (PyCFunction)NcPlane_abs_x, METH_NOARGS, PyDoc_STR("Get the X origin of plane relative to its pile.")},
 
-    {"parent", (PyCFunction)NcPlane_parent, METH_NOARGS, PyDoc_STR("Get the plane to which the plane 'n' is bound, if any.")},
-    {"descendant_p", (PyCFunction)NcPlane_descendant_p, METH_VARARGS, PyDoc_STR("Return True if 'n' is a proper descendent of 'ancestor'.")},
+    {"parent", (PyCFunction)NcPlane_parent, METH_NOARGS, PyDoc_STR("Get the plane to which the plane is bound or None if plane does not have parent.")},
+    {"descendant_p", (PyCFunction)NcPlane_descendant_p, METH_VARARGS, PyDoc_STR("Return True if plane is a proper descendent of passed 'ancestor' plane.")},
 
     {"move_top", (PyCFunction)NcPlane_move_top, METH_NOARGS, PyDoc_STR("Splice ncplane out of the z-buffer, and reinsert it at the top.")},
     {"move_bottom", (PyCFunction)NcPlane_move_bottom, METH_NOARGS, PyDoc_STR("Splice ncplane out of the z-buffer, and reinsert it at the bottom.")},
@@ -1772,19 +1817,19 @@ static PyMethodDef NcPlane_methods[] = {
     {"fchannel", (PyCFunction)NcPlane_fchannel, METH_NOARGS, PyDoc_STR("Extract the 32-bit working foreground channel from an ncplane.")},
     {"set_channels", (PyCFunction)NcPlane_set_channels, METH_VARARGS, PyDoc_STR("Set both foreground and background channels of the plane.")},
 
-    {"set_styles", (PyCFunction)NcPlane_set_styles, METH_VARARGS, PyDoc_STR("Set the specified style bits for the ncplane 'n', whether they're actively supported or not.")},
+    {"set_styles", (PyCFunction)NcPlane_set_styles, METH_VARARGS, PyDoc_STR("Set the specified style bits for the plane, whether they're actively supported or not.")},
     {"on_styles", (PyCFunction)NcPlane_on_styles, METH_VARARGS, PyDoc_STR("Add the specified styles to the ncplane's existing spec.")},
     {"off_styles", (PyCFunction)NcPlane_off_styles, METH_VARARGS, PyDoc_STR("Remove the specified styles from the ncplane's existing spec.")},
 
-    {"fg_rgb", (PyCFunction)NcPlane_fg_rgb, METH_NOARGS, PyDoc_STR("Extract 24 bits of working foreground RGB from an ncplane, shifted to LSBs.")},
-    {"bg_rgb", (PyCFunction)NcPlane_bg_rgb, METH_NOARGS, PyDoc_STR("Extract 24 bits of working background RGB from an ncplane, shifted to LSBs.")},
-    {"fg_alpha", (PyCFunction)NcPlane_fg_alpha, METH_NOARGS, PyDoc_STR("Extract 2 bits of foreground alpha from 'struct ncplane', shifted to LSBs.")},
+    {"fg_rgb", (PyCFunction)NcPlane_fg_rgb, METH_NOARGS, PyDoc_STR("Extract 24 bits of working foreground RGB from the plane, shifted to LSBs.")},
+    {"bg_rgb", (PyCFunction)NcPlane_bg_rgb, METH_NOARGS, PyDoc_STR("Extract 24 bits of working background RGB from the plane, shifted to LSBs.")},
+    {"fg_alpha", (PyCFunction)NcPlane_fg_alpha, METH_NOARGS, PyDoc_STR("Extract 2 bits of foreground alpha from the plane, shifted to LSBs.")},
     {"fg_default_p", (PyCFunction)NcPlane_fg_default_p, METH_NOARGS, PyDoc_STR("Is the plane's foreground using the \"default foreground color\"?")},
-    {"bg_alpha", (PyCFunction)NcPlane_bg_alpha, METH_NOARGS, PyDoc_STR("Extract 2 bits of background alpha from 'struct ncplane', shifted to LSBs.")},
+    {"bg_alpha", (PyCFunction)NcPlane_bg_alpha, METH_NOARGS, PyDoc_STR("Extract 2 bits of background alpha from the plane, shifted to LSBs.")},
     {"bg_default_p", (PyCFunction)NcPlane_bg_default_p, METH_NOARGS, PyDoc_STR("Is the plane's background using the \"default background color\"?")},
 
-    {"fg_rgb8", (PyCFunction)NcPlane_fg_rgb8, METH_NOARGS, PyDoc_STR("Extract 24 bits of foreground RGB from 'n', split into components.")},
-    {"bg_rgb8", (PyCFunction)NcPlane_bg_rgb8, METH_NOARGS, PyDoc_STR("Extract 24 bits of background RGB from 'n', split into components.")},
+    {"fg_rgb8", (PyCFunction)NcPlane_fg_rgb8, METH_NOARGS, PyDoc_STR("Extract 24 bits of foreground RGB from the plane, split into components.")},
+    {"bg_rgb8", (PyCFunction)NcPlane_bg_rgb8, METH_NOARGS, PyDoc_STR("Extract 24 bits of background RGB from the plane, split into components.")},
     {"set_fchannel", (PyCFunction)NcPlane_set_fchannel, METH_VARARGS, PyDoc_STR("Set an entire foreground channel of the plane, return new channels.")},
     {"set_bchannel", (PyCFunction)NcPlane_set_bchannel, METH_VARARGS, PyDoc_STR("Set an entire background channel of the plane, return new channels.")},
 
@@ -1828,7 +1873,7 @@ static PyMethodDef NcPlane_methods[] = {
     {"tree_create", (void *)NcPlane_tree_create, METH_VARARGS | METH_KEYWORDS, PyDoc_STR("Create NcTree.")},
     {"menu_create", (void *)NcPlane_menu_create, METH_VARARGS | METH_KEYWORDS, PyDoc_STR("Create NcMenu.")},
     {"progbar_create", (void *)NcPlane_progbar_create, METH_VARARGS | METH_KEYWORDS, PyDoc_STR("Create NcProgbar.")},
-    {"tabbed_create", (void *)NcPlane_tabbed_create, METH_VARARGS | METH_KEYWORDS, PyDoc_STR("Create NcProgbar.")},
+    {"tabbed_create", (void *)NcPlane_tabbed_create, METH_VARARGS | METH_KEYWORDS, PyDoc_STR("Create NcTabbed.")},
     {"uplot_create", (void *)NcPlane_uplot_create, METH_VARARGS | METH_KEYWORDS, PyDoc_STR("Create NcUplot.")},
     {"dplot_create", (void *)NcPlane_dplot_create, METH_VARARGS | METH_KEYWORDS, PyDoc_STR("Create NcDplot.")},
     {"fdplane_create", (void *)NcPlane_fdplane_create, METH_VARARGS | METH_KEYWORDS, PyDoc_STR("Create NcFdPlane.")},
@@ -1845,6 +1890,9 @@ static PyMethodDef NcPlane_methods[] = {
     {"pile_bottom", (PyCFunction)NcPlane_pile_bottom, METH_NOARGS, PyDoc_STR("Return the bottommost plane of the pile.")},
     {"pile_render", (PyCFunction)NcPlane_pile_render, METH_NOARGS, PyDoc_STR("Renders the pile of which plane is a part.")},
     {"pile_rasterize", (PyCFunction)NcPlane_pile_rasterize, METH_NOARGS, PyDoc_STR("Make the physical screen match the last rendered frame from the pile.")},
+
+    {"pile_render_to_buffer", (PyCFunction)NcPlane_pile_render_to_buffer, METH_NOARGS, "Perform the rendering and rasterization portion of notcurses_render() and write it to bytes object instead of terminal."},
+    {"render_to_file", (PyCFunction)NcPlane_pile_render_to_file, METH_VARARGS, "Write the last rendered frame, in its entirety, to file descriptor. If render() has not yet been called, nothing will be written."},
 
     //  {"", (PyCFunction) NULL, METH_VARARGS, PyDoc_STR("")},
     {NULL, NULL, 0, NULL},

@@ -4,26 +4,95 @@
 #include "visual-details.h"
 #include "internal.h"
 
-const ncvisual_implementation* visual_implementation = NULL;
+// ncvisual core code has a basic implementation in libnotcurses-core, and can
+// be augmented with a "multimedia engine" -- currently FFmpeg or OpenImageIO,
+// or the trivial "none" engine. all libnotcurses (built against one of these
+// engines, selected at compile time) actually does is set this
+// visual_implementation pointer, and then call libnotcurses_core_init(). the
+// "none" implementation exists to facilitate linking programs written against
+// libnotcurses in environments without a true multimedia engine, and does not
+// set this pointer. all this machination exists to support building notcurses
+// (and running notcurses programs) without the need of heavy media engines.
 
+ncvisual_implementation visual_implementation = { };
+
+// to be called at startup -- performs any necessary engine initialization.
+int ncvisual_init(int logl){
+  if(visual_implementation.visual_init){
+    return visual_implementation.visual_init(logl);
+  }
+  return 0;
+}
+
+void ncvisual_printbanner(const notcurses* nc){
+  if(visual_implementation.visual_printbanner){
+    visual_implementation.visual_printbanner(nc);
+  }
+}
+
+// you need an actual multimedia implementation for functions which work with
+// codecs, including ncvisual_decode(), ncvisual_decode_loop(),
+// ncvisual_from_file(), ncvisual_stream(), and ncvisual_subtitle().
 int ncvisual_decode(ncvisual* nc){
-  if(!visual_implementation){
+  if(!visual_implementation.visual_decode){
     return -1;
   }
-  return visual_implementation->visual_decode(nc);
+  return visual_implementation.visual_decode(nc);
+}
+
+int ncvisual_decode_loop(ncvisual* nc){
+  if(!visual_implementation.visual_decode_loop){
+    return -1;
+  }
+  return visual_implementation.visual_decode_loop(nc);
+}
+
+ncvisual* ncvisual_from_file(const char* filename){
+  if(!visual_implementation.visual_from_file){
+    return NULL;
+  }
+  return visual_implementation.visual_from_file(filename);
+}
+
+int ncvisual_stream(notcurses* nc, ncvisual* ncv, float timescale,
+                    ncstreamcb streamer, const struct ncvisual_options* vopts,
+                    void* curry){
+  if(!visual_implementation.visual_stream){
+    return -1;
+  }
+  return visual_implementation.visual_stream(nc, ncv, timescale, streamer, vopts, curry);
+}
+
+char* ncvisual_subtitle(const ncvisual* ncv){
+  if(!visual_implementation.visual_subtitle){
+    return NULL;
+  }
+  return visual_implementation.visual_subtitle(ncv);
 }
 
 int ncvisual_blit(ncvisual* ncv, int rows, int cols, ncplane* n,
                   const struct blitset* bset, const blitterargs* barg){
+  if(!(barg->flags & NCVISUAL_OPTION_NOINTERPOLATE)){
+    if(visual_implementation.visual_blit){
+      if(visual_implementation.visual_blit(ncv, rows, cols, n, bset, barg) < 0){
+        return -1;
+      }
+      return 0;
+    }
+  }
+  // generic implementation
+  int stride = 4 * cols;
+  uint32_t* data = resize_bitmap(ncv->data, ncv->pixy, ncv->pixx,
+                                 ncv->rowstride, rows, cols, stride);
+  if(data == NULL){
+    return -1;
+  }
   int ret = -1;
-  if(visual_implementation){
-    if(visual_implementation->visual_blit(ncv, rows, cols, n, bset, barg) >= 0){
-      ret = 0;
-    }
-  }else{
-    if(rgba_blit_dispatch(n, bset, ncv->rowstride, ncv->data, rows, cols, barg) >= 0){
-      ret = 0;
-    }
+  if(rgba_blit_dispatch(n, bset, stride, data, rows, cols, barg, 32) >= 0){
+    ret = 0;
+  }
+  if(data != ncv->data){
+    free(data);
   }
   return ret;
 }
@@ -32,38 +101,18 @@ int ncvisual_blit(ncvisual* ncv, int rows, int cols, ncplane* n,
 // AVFrame* 'frame' according to their own data, which is assumed to
 // have been prepared already in 'ncv'.
 void ncvisual_details_seed(struct ncvisual* ncv){
-  if(visual_implementation){
-    visual_implementation->visual_details_seed(ncv);
+  if(visual_implementation.visual_details_seed){
+    visual_implementation.visual_details_seed(ncv);
   }
-}
-
-int ncvisual_init(int loglevel){
-  if(visual_implementation){
-    return visual_implementation->visual_init(loglevel);
-  }
-  return 0;
-}
-
-ncvisual* ncvisual_from_file(const char* filename){
-  if(!visual_implementation){
-    return NULL;
-  }
-  return visual_implementation->visual_from_file(filename);
 }
 
 ncvisual* ncvisual_create(void){
-  if(visual_implementation){
-    return visual_implementation->visual_create();
+  if(visual_implementation.visual_create){
+    return visual_implementation.visual_create();
   }
   ncvisual* ret = malloc(sizeof(*ret));
   memset(ret, 0, sizeof(*ret));
   return ret;
-}
-
-void ncvisual_printbanner(const notcurses* nc){
-  if(visual_implementation){
-    visual_implementation->visual_printbanner(nc);
-  }
 }
 
 static inline void
@@ -78,11 +127,11 @@ ncvisual_origin(const struct ncvisual_options* vopts, int* restrict begy, int* r
 // FIXME we ought also do the output calculations here (how many rows x cols,
 //   given the input plane vopts->n and scaling vopts->scaling)--but do not
 //   perform any actual scaling, nor create any planes!
-static int
-ncvisual_blitset_geom(const notcurses* nc, const ncvisual* n,
-                      const struct ncvisual_options* vopts,
-                      int* y, int* x, int* scaley, int* scalex,
-                      int* leny, int* lenx, const struct blitset** blitter){
+// takes tcache distinctly; nc is used only for logging, and can be NULL
+int ncvisual_blitset_geom(const notcurses* nc, const tinfo* tcache,
+                          const ncvisual* n, const struct ncvisual_options* vopts,
+                          int* y, int* x, int* scaley, int* scalex,
+                          int* leny, int* lenx, const struct blitset** blitter){
   int fakeleny, fakelenx;
   if(leny == NULL){
     leny = &fakeleny;
@@ -90,11 +139,11 @@ ncvisual_blitset_geom(const notcurses* nc, const ncvisual* n,
   if(lenx == NULL){
     lenx = &fakelenx;
   }
-  if(vopts && vopts->flags >= (NCVISUAL_OPTION_CHILDPLANE << 1u)){
-    logwarn(nc, "Warning: unknown ncvisual options %016jx\n", (uintmax_t)vopts->flags);
+  if(vopts && vopts->flags >= (NCVISUAL_OPTION_NOINTERPOLATE << 1u)){
+    logwarn("Warning: unknown ncvisual options %016jx\n", (uintmax_t)vopts->flags);
   }
   if(vopts && (vopts->flags & NCVISUAL_OPTION_CHILDPLANE) && !vopts->n){
-    logerror(nc, "Requested child plane with NULL n\n");
+    logerror("Requested child plane with NULL n\n");
     return -1;
   }
   int begy, begx;
@@ -103,18 +152,18 @@ ncvisual_blitset_geom(const notcurses* nc, const ncvisual* n,
   *leny = vopts ? vopts->leny : 0;
 //fprintf(stderr, "blit %dx%d+%dx%d %p\n", begy, begx, *leny, *lenx, ncv->data);
   if(begy < 0 || begx < 0 || *lenx <= -1 || *leny <= -1){
-    logerror(nc, "Invalid geometry for visual %d %d %d %d\n", begy, begx, *leny, *lenx);
+    logerror("Invalid geometry for visual %d %d %d %d\n", begy, begx, *leny, *lenx);
     return -1;
   }
   if(n){
 //fprintf(stderr, "OUR DATA: %p rows/cols: %d/%d\n", n->data, n->pixy, n->pixx);
     if(n->data == NULL){
-      logerror(nc, "No data in visual\n");
+      logerror("No data in visual\n");
       return -1;
     }
 //fprintf(stderr, "blit %d/%d to %dx%d+%dx%d scaling: %d\n", n->pixy, n->pixx, begy, begx, *leny, *lenx, vopts ? vopts->scaling : 0);
     if(begx >= n->pixx || begy >= n->pixy){
-      logerror(nc, "Visual too large %d > %d or %d > %d\n", begy, n->pixy, begx, n->pixx);
+      logerror("Visual too large %d > %d or %d > %d\n", begy, n->pixy, begx, n->pixx);
       return -1;
     }
     if(*lenx == 0){ // 0 means "to the end"; use all available source material
@@ -125,17 +174,17 @@ ncvisual_blitset_geom(const notcurses* nc, const ncvisual* n,
     }
 //fprintf(stderr, "blit %d/%d to %dx%d+%dx%d scaling: %d flags: 0x%016lx\n", n->pixy, n->pixx, begy, begx, *leny, *lenx, vopts ? vopts->scaling : 0, vopts ? vopts->flags : 0);
     if(*lenx <= 0 || *leny <= 0){ // no need to draw zero-size object, exit
-      logerror(nc, "Zero-size object %d %d\n", *leny, *lenx);
+      logerror("Zero-size object %d %d\n", *leny, *lenx);
       return -1;
     }
     if(begx + *lenx > n->pixx || begy + *leny > n->pixy){
-      logerror(nc, "Geometry too large %d > %d or %d > %d\n", begy + *leny, n->pixy, begx + *lenx, n->pixx);
+      logerror("Geometry too large %d > %d or %d > %d\n", begy + *leny, n->pixy, begx + *lenx, n->pixx);
       return -1;
     }
   }
-  const struct blitset* bset = rgba_blitter(nc, vopts);
+  const struct blitset* bset = rgba_blitter(tcache, vopts);
   if(!bset){
-    logerror(nc, "Couldn't get a blitter for %d\n", vopts ? vopts->blitter : NCBLIT_DEFAULT);
+    logerror("Couldn't get a blitter for %d\n", vopts ? vopts->blitter : NCBLIT_DEFAULT);
     return -1;
   }
   if(blitter){
@@ -144,27 +193,27 @@ ncvisual_blitset_geom(const notcurses* nc, const ncvisual* n,
   if(bset->geom == NCBLIT_PIXEL && vopts){
     if(vopts->n){
       if(vopts->n == notcurses_stdplane_const(nc)){
-        logerror(nc, "Won't blit bitmaps to the standard plane\n");
+        logerror("Won't blit bitmaps to the standard plane\n");
         return -1;
       }
       if(vopts->y && !(vopts->flags & NCVISUAL_OPTION_VERALIGNED)){
-        logerror(nc, "Non-origin y placement %d for sprixel\n", vopts->y);
+        logerror("Non-origin y placement %d for sprixel\n", vopts->y);
         return -1;
       }
       if(vopts->x && !(vopts->flags & NCVISUAL_OPTION_HORALIGNED)){
-        logerror(nc, "Non-origin x placement %d for sprixel\n", vopts->x);
+        logerror("Non-origin x placement %d for sprixel\n", vopts->x);
         return -1;
       }
       // FIXME clamp to sprixel limits
       if(vopts->scaling == NCSCALE_NONE || vopts->scaling == NCSCALE_NONE_HIRES){
         int rows = (*leny + nc->tcache.cellpixy - 1) / nc->tcache.cellpixy;
         if(rows > ncplane_dim_y(vopts->n)){
-          logerror(nc, "Sprixel too tall %d for plane %d\n", *leny, ncplane_dim_y(vopts->n) * nc->tcache.cellpixy);
+          logerror("Sprixel too tall %d for plane %d\n", *leny, ncplane_dim_y(vopts->n) * nc->tcache.cellpixy);
           return -1;
         }
         int cols = (*lenx + nc->tcache.cellpixx - 1) / nc->tcache.cellpixx;
         if(cols > ncplane_dim_x(vopts->n)){
-          logerror(nc, "Sprixel too wide %d for plane %d\n", *lenx, ncplane_dim_x(vopts->n) * nc->tcache.cellpixx);
+          logerror("Sprixel too wide %d for plane %d\n", *lenx, ncplane_dim_x(vopts->n) * nc->tcache.cellpixx);
           return -1;
         }
       }
@@ -179,20 +228,20 @@ ncvisual_blitset_geom(const notcurses* nc, const ncvisual* n,
     }
   }
   if(scaley){
-    *scaley = encoding_y_scale(&nc->tcache, bset);
+    *scaley = encoding_y_scale(tcache, bset);
   }
   if(scalex){
-    *scalex = encoding_x_scale(&nc->tcache, bset);
+    *scalex = encoding_x_scale(tcache, bset);
   }
   if(vopts && vopts->flags & NCVISUAL_OPTION_HORALIGNED){
     if(vopts->x < NCALIGN_UNALIGNED || vopts->x > NCALIGN_RIGHT){
-      logerror(nc, "Bad x %d for horizontal alignment\n", vopts->x);
+      logerror("Bad x %d for horizontal alignment\n", vopts->x);
       return -1;
     }
   }
   if(vopts && vopts->flags & NCVISUAL_OPTION_VERALIGNED){
     if(vopts->y < NCALIGN_UNALIGNED || vopts->y > NCALIGN_RIGHT){
-      logerror(nc, "Bad y %d for vertical alignment\n", vopts->y);
+      logerror("Bad y %d for vertical alignment\n", vopts->y);
       return -1;
     }
   }
@@ -204,8 +253,8 @@ int ncvisual_blitter_geom(const notcurses* nc, const ncvisual* n,
                           int* y, int* x, int* scaley, int* scalex,
                           ncblitter_e* blitter){
   const struct blitset* bset;
-  int ret = ncvisual_blitset_geom(nc, n, vopts, y, x, scaley, scalex,
-                                  NULL, NULL, &bset);
+  int ret = ncvisual_blitset_geom(nc, &nc->tcache, n, vopts, y, x,
+                                  scaley, scalex, NULL, NULL, &bset);
   if(ret == 0 && blitter){
     *blitter = bset->geom;
   }
@@ -237,9 +286,6 @@ void* rgb_loose_to_rgba(const void* data, int rows, int* rowstride, int cols, in
 }
 
 void* rgb_packed_to_rgba(const void* data, int rows, int* rowstride, int cols, int alpha){
-  if(*rowstride % 3){ // must be a multiple of 3 bytes
-    return NULL;
-  }
   if(*rowstride < cols * 3){
     return NULL;
   }
@@ -459,16 +505,8 @@ rotate_bounding_box(double stheta, double ctheta, int* leny, int* lenx,
 }
 
 int ncvisual_rotate(ncvisual* ncv, double rads){
-  // done to force conversion into RGBA
-  int err = ncvisual_resize(ncv, ncv->pixy, ncv->pixx);
-  if(err){
-    return err;
-  }
   assert(ncv->rowstride / 4 >= ncv->pixx);
   rads = -rads; // we're a left-handed Cartesian
-  if(ncv->data == NULL){
-    return -1;
-  }
   int centy, centx;
   ncvisual_center(ncv, &centy, &centx); // pixel center (center of 'data')
   double stheta, ctheta; // sine, cosine
@@ -482,11 +520,13 @@ int ncvisual_rotate(ncvisual* ncv, double rads){
   int bboffy = 0;
   int bboffx = 0;
   if(ncvisual_bounding_box(ncv, &bby, &bbx, &bboffy, &bboffx) <= 0){
+    logerror("Couldn't find a bounding box\n");
     return -1;
   }
   int bbarea;
   bbarea = rotate_bounding_box(stheta, ctheta, &bby, &bbx, &bboffy, &bboffx);
   if(bbarea <= 0){
+    logerror("Couldn't rotate the visual (%d, %d, %d, %d)\n", bby, bbx, bboffy, bboffx);
     return -1;
   }
   int bbcentx = bbx, bbcenty = bby;
@@ -520,22 +560,99 @@ int ncvisual_rotate(ncvisual* ncv, double rads){
   return 0;
 }
 
+// ffmpeg wants rows to be multiples of IMGALIGN (64)
+#define IMGALIGN 64
+static inline size_t
+pad_for_image(size_t stride){
+  if(stride % IMGALIGN == 0){
+    return stride;
+  }
+  return (stride + IMGALIGN) / IMGALIGN * IMGALIGN;
+}
+#undef IMGALIGN
+
 ncvisual* ncvisual_from_rgba(const void* rgba, int rows, int rowstride, int cols){
   if(rowstride % 4){
+    logerror("Rowstride %d not a multiple of 4\n", rowstride);
     return NULL;
   }
   ncvisual* ncv = ncvisual_create();
   if(ncv){
-    ncv->rowstride = rowstride;
+    // ffmpeg needs inputs with rows aligned on 192-byte boundaries
+    ncv->rowstride = pad_for_image(rowstride);
     ncv->pixx = cols;
     ncv->pixy = rows;
-    uint32_t* data = memdup(rgba, rowstride * ncv->pixy);
-//fprintf(stderr, "COPY US %d (%d)\n", rowstride * ncv->pixy, ncv->pixy);
+    uint32_t* data = malloc(ncv->rowstride * ncv->pixy);
     if(data == NULL){
       ncvisual_destroy(ncv);
       return NULL;
     }
-//fprintf(stderr, "ROWS: %d STRIDE: %d (%d) COLS: %d\n", rows, rowstride, rowstride / 4, cols);
+    for(int y = 0 ; y < rows ; ++y){
+      memcpy(data + (ncv->rowstride * y) / 4, (const char*)rgba + rowstride * y, rowstride);
+//fprintf(stderr, "ROWS: %d STRIDE: %d (%d) COLS: %d %08x\n", ncv->pixy, ncv->rowstride, ncv->rowstride / 4, cols, data[ncv->rowstride * y / 4]);
+    }
+    ncvisual_set_data(ncv, data, true);
+    ncvisual_details_seed(ncv);
+  }
+  return ncv;
+}
+
+ncvisual* ncvisual_from_rgb_packed(const void* rgba, int rows, int rowstride,
+                                   int cols, int alpha){
+  ncvisual* ncv = ncvisual_create();
+  if(ncv){
+    ncv->rowstride = pad_for_image(cols * 4);
+    ncv->pixx = cols;
+    ncv->pixy = rows;
+    uint32_t* data = malloc(ncv->rowstride * ncv->pixy);
+    if(data == NULL){
+      ncvisual_destroy(ncv);
+      return NULL;
+    }
+    const unsigned char* src = rgba;
+    for(int y = 0 ; y < rows ; ++y){
+//fprintf(stderr, "ROWS: %d STRIDE: %d (%d) COLS: %d %08x\n", ncv->pixy, ncv->rowstride, ncv->rowstride / 4, cols, data[ncv->rowstride * y / 4]);
+      for(int x = 0 ; x < cols ; ++x){
+        unsigned char r, g, b;
+        memcpy(&r, src + rowstride * y + 3 * x, 1);
+        memcpy(&g, src + rowstride * y + 3 * x + 1, 1);
+        memcpy(&b, src + rowstride * y + 3 * x + 2, 1);
+        ncpixel_set_a(&data[y * ncv->rowstride / 4 + x], alpha);
+        ncpixel_set_r(&data[y * ncv->rowstride / 4 + x], r);
+        ncpixel_set_g(&data[y * ncv->rowstride / 4 + x], g);
+        ncpixel_set_b(&data[y * ncv->rowstride / 4 + x], b);
+//fprintf(stderr, "RGBA: 0x%02x 0x%02x 0x%02x 0x%02x\n", r, g, b, alpha);
+      }
+    }
+    ncvisual_set_data(ncv, data, true);
+    ncvisual_details_seed(ncv);
+  }
+  return ncv;
+}
+
+ncvisual* ncvisual_from_rgb_loose(const void* rgba, int rows, int rowstride,
+                                  int cols, int alpha){
+  if(rowstride % 4){
+    logerror("Rowstride %d not a multiple of 4\n", rowstride);
+    return NULL;
+  }
+  ncvisual* ncv = ncvisual_create();
+  if(ncv){
+    ncv->rowstride = pad_for_image(cols * 4);
+    ncv->pixx = cols;
+    ncv->pixy = rows;
+    uint32_t* data = malloc(ncv->rowstride * ncv->pixy);
+    if(data == NULL){
+      ncvisual_destroy(ncv);
+      return NULL;
+    }
+    for(int y = 0 ; y < rows ; ++y){
+//fprintf(stderr, "ROWS: %d STRIDE: %d (%d) COLS: %d %08x\n", ncv->pixy, ncv->rowstride, ncv->rowstride / 4, cols, data[ncv->rowstride * y / 4]);
+      memcpy(data + (ncv->rowstride * y) / 4, (const char*)rgba + rowstride * y, rowstride);
+      for(int x = 0 ; x < cols ; ++x){
+        ncpixel_set_a(&data[y * ncv->rowstride / 4 + x], alpha);
+      }
+    }
     ncvisual_set_data(ncv, data, true);
     ncvisual_details_seed(ncv);
   }
@@ -548,23 +665,55 @@ ncvisual* ncvisual_from_bgra(const void* bgra, int rows, int rowstride, int cols
   }
   ncvisual* ncv = ncvisual_create();
   if(ncv){
-    ncv->rowstride = rowstride;
+    ncv->rowstride = pad_for_image(rowstride);
     ncv->pixx = cols;
     ncv->pixy = rows;
-    uint32_t* data = memdup(bgra, rowstride * ncv->pixy);
-    for(int p = 0 ; p < rowstride / 4 * ncv->pixy ; ++p){
-      const unsigned r = (data[p] & 0xffllu) << 16u;
-      const unsigned b = (data[p] & 0xff0000llu) >> 16u;
-      data[p] = (data[p] & 0xff00ff00llu) | r | b;
-    }
+    uint32_t* data = malloc(ncv->rowstride * ncv->pixy);
     if(data == NULL){
       ncvisual_destroy(ncv);
       return NULL;
+    }
+    for(int y = 0 ; y < rows ; ++y){
+      for(int x = 0 ; x < cols ; ++x){
+        uint32_t src;
+        memcpy(&src, (const char*)bgra + y * rowstride + x * 4, 4);
+        uint32_t* dst = &data[ncv->rowstride * y / 4 + x];
+        ncpixel_set_a(dst, ncpixel_a(src));
+        ncpixel_set_r(dst, ncpixel_b(src));
+        ncpixel_set_g(dst, ncpixel_g(src));
+        ncpixel_set_b(dst, ncpixel_r(src));
+//fprintf(stderr, "BGRA PIXEL: %02x%02x%02x%02x RGBA result: %02x%02x%02x%02x\n", ((const char*)&src)[0], ((const char*)&src)[1], ((const char*)&src)[2], ((const char*)&src)[3], ((const char*)dst)[0], ((const char*)dst)[1], ((const char*)dst)[2], ((const char*)dst)[3]);
+      }
     }
     ncvisual_set_data(ncv, data, true);
     ncvisual_details_seed(ncv);
   }
   return ncv;
+}
+
+int ncvisual_resize(ncvisual* nc, int rows, int cols){
+  if(!visual_implementation.visual_resize){
+    return ncvisual_resize_noninterpolative(nc, rows, cols);
+  }
+  if(visual_implementation.visual_resize(nc, rows, cols)){
+    return -1;
+  }
+  return 0;
+}
+
+int ncvisual_resize_noninterpolative(ncvisual* n, int rows, int cols){
+  size_t dstride = pad_for_image(cols * 4);
+  uint32_t* r = resize_bitmap(n->data, n->pixy, n->pixx, n->rowstride,
+                              rows, cols, dstride);
+  if(r == NULL){
+    return -1;
+  }
+  ncvisual_set_data(n, r, true);
+  n->rowstride = dstride;
+  n->pixy = rows;
+  n->pixx = cols;
+  ncvisual_details_seed(n);
+  return 0;
 }
 
 // by the end, disprows/dispcols refer to the number of source rows/cols (in
@@ -575,7 +724,7 @@ ncvisual* ncvisual_from_bgra(const void* bgra, int rows, int rowstride, int cols
 // ncv->pixx define the source geometry in pixels.
 ncplane* ncvisual_render_cells(notcurses* nc, ncvisual* ncv, const struct blitset* bset,
                                int placey, int placex, int begy, int begx,
-                               ncplane* n, ncscale_e scaling,
+                               int leny, int lenx, ncplane* n, ncscale_e scaling,
                                uint64_t flags, uint32_t transcolor){
   int disprows, dispcols;
   ncplane* createdn = NULL;
@@ -585,8 +734,8 @@ ncplane* ncvisual_render_cells(notcurses* nc, ncvisual* ncv, const struct blitse
       n = notcurses_stdplane(nc);
     }
     if(scaling == NCSCALE_NONE || scaling == NCSCALE_NONE_HIRES){
-      dispcols = ncv->pixx;
-      disprows = ncv->pixy;
+      dispcols = lenx;
+      disprows = leny;
     }else{
       ncplane_dim_yx(n, &disprows, &dispcols);
       dispcols *= encoding_x_scale(&nc->tcache, bset);
@@ -622,8 +771,8 @@ ncplane* ncvisual_render_cells(notcurses* nc, ncvisual* ncv, const struct blitse
     placex = 0;
   }else{
     if(scaling == NCSCALE_NONE || scaling == NCSCALE_NONE_HIRES){
-      dispcols = ncv->pixx;
-      disprows = ncv->pixy;
+      dispcols = lenx;
+      disprows = leny;
     }else{
       ncplane_dim_yx(n, &disprows, &dispcols);
       dispcols *= encoding_x_scale(&nc->tcache, bset);
@@ -654,9 +803,11 @@ ncplane* ncvisual_render_cells(notcurses* nc, ncvisual* ncv, const struct blitse
   }
   bargs.begy = begy;
   bargs.begx = begx;
+  bargs.leny = leny;
+  bargs.lenx = lenx;
+  bargs.flags = flags;
   bargs.u.cell.placey = placey;
   bargs.u.cell.placex = placex;
-  bargs.u.cell.blendcolors = flags & NCVISUAL_OPTION_BLEND;
   if(ncvisual_blit(ncv, disprows, dispcols, n, bset, &bargs)){
     ncplane_destroy(createdn);
     return NULL;
@@ -674,8 +825,9 @@ make_sprixel_plane(notcurses* nc, ncplane* parent, ncvisual* ncv,
                    uint64_t flags, int* outy, int* placey, int* placex){
   if(scaling != NCSCALE_NONE && scaling != NCSCALE_NONE_HIRES){
     ncplane_dim_yx(parent, disppixy, disppixx);
+    // FIXME why do we clamp only vertical, not horizontal, here?
     if(*placey + *disppixy >= ncplane_dim_y(notcurses_stdplane_const(nc))){
-      *disppixy = ncplane_dim_y(notcurses_stdplane_const(nc)) - *placey - 1;
+      *disppixy = ncplane_dim_y(notcurses_stdplane_const(nc)) - *placey;
     }
     if(!(flags & NCVISUAL_OPTION_VERALIGNED)){
       *disppixy -= *placey;
@@ -737,16 +889,15 @@ make_sprixel_plane(notcurses* nc, ncplane* parent, ncvisual* ncv,
 // output width is always equal to the scaled width; it has no distinct name.
 ncplane* ncvisual_render_pixels(notcurses* nc, ncvisual* ncv, const struct blitset* bset,
                                 int placey, int placex, int begy, int begx,
-                                ncplane* n, ncscale_e scaling, uint64_t flags,
-                                uint32_t transcolor){
+                                int leny, int lenx, ncplane* n, ncscale_e scaling,
+                                uint64_t flags, uint32_t transcolor){
   ncplane* stdn = notcurses_stdplane(nc);
   if(n == stdn){
-    logerror(nc, "Won't blit bitmaps to the standard plane\n");
+    logerror("Won't blit bitmaps to the standard plane\n");
     return NULL;
   }
   int disppixy = 0, disppixx = 0, outy = 0;
   ncplane* createdn = NULL;
-//fprintf(stderr, "INPUT N: %p rows: %d cols: %d 0x%016lx\n", n ? n : NULL, disppixy, disppixx, flags);
   if(n == NULL || (flags & NCVISUAL_OPTION_CHILDPLANE)){ // create plane
     if(n == NULL){
       n = notcurses_stdplane(nc);
@@ -772,8 +923,8 @@ ncplane* ncvisual_render_pixels(notcurses* nc, ncvisual* ncv, const struct blits
       disppixx -= absplacex * nc->tcache.cellpixx;
       disppixy -= absplacey * nc->tcache.cellpixy;
     }else{
-      disppixx = ncv->pixx;
-      disppixy = ncv->pixy;
+      disppixx = lenx;
+      disppixy = leny;
     }
     if(scaling == NCSCALE_SCALE || scaling == NCSCALE_SCALE_HIRES){
       clamp_to_sixelmax(&nc->tcache, &disppixy, &disppixx, &outy, scaling);
@@ -795,6 +946,9 @@ ncplane* ncvisual_render_pixels(notcurses* nc, ncvisual* ncv, const struct blits
   }
   bargs.begy = begy;
   bargs.begx = begx;
+  bargs.leny = leny;
+  bargs.lenx = lenx;
+  bargs.flags = flags;
   bargs.u.pixel.celldimx = nc->tcache.cellpixx;
   bargs.u.pixel.celldimy = nc->tcache.cellpixy;
   bargs.u.pixel.colorregs = nc->tcache.color_registers;
@@ -809,11 +963,11 @@ ncplane* ncvisual_render_pixels(notcurses* nc, ncvisual* ncv, const struct blits
     n->sprite = sprixel_recycle(n);
   }
   bargs.u.pixel.spx = n->sprite;
-  // FIXME only set this if cursor is indeed hidden
-  if(nc->tcache.sprixel_cursor_hack){
-    bargs.u.pixel.cursor_hack = nc->tcache.civis;
-  }else{
-    bargs.u.pixel.cursor_hack = NULL;
+  // if we are kitty prior to 0.20.0, we set NCVISUAL_OPTION_SCROLL so that
+  // C=1 won't be supplied. we use sixel_maxy_pristine as a side channel to
+  // encode this version information.
+  if(nc->tcache.sixel_maxy_pristine){
+    bargs.flags |= NCVISUAL_OPTION_SCROLL;
   }
   // FIXME need to pull off the ncpile's sprixellist if anything below fails!
   // at this point, disppixy/disppixx are the output geometry (might be larger
@@ -823,6 +977,7 @@ ncplane* ncvisual_render_pixels(notcurses* nc, ncvisual* ncv, const struct blits
     ncplane_destroy(createdn);
     return NULL;
   }
+//fprintf(stderr, "FOLLOWING PLANE: %d %d %d %d\n", n->absy, n->absx, n->leny, n->lenx);
   // if we created the plane earlier, placex/placey were taken into account, and
   // zeroed out, thus neither of these will have any effect.
   if(flags & NCVISUAL_OPTION_HORALIGNED){
@@ -850,9 +1005,9 @@ ncplane* ncvisual_render_pixels(notcurses* nc, ncvisual* ncv, const struct blits
   // the intended location.
   sprixel* s = n->sprite;
   n->sprite = NULL;
+//fprintf(stderr, "ABOUT TO RESIZE: yoff/xoff: %d/%d\n",  placey, placex);
   // FIXME might need shrink down the TAM and kill unnecessary auxvecs
-  if(ncplane_resize(n, 0, 0, s->dimy, s->dimx, placey - ncplane_y(n),
-                    placex - ncplane_x(n), s->dimy, s->dimx)){
+  if(ncplane_resize(n, 0, 0, s->dimy, s->dimx, placey, placex, s->dimy, s->dimx)){
     sprixel_hide(bargs.u.pixel.spx);
     ncplane_destroy(createdn);
     return NULL;
@@ -865,7 +1020,7 @@ ncplane* ncvisual_render_pixels(notcurses* nc, ncvisual* ncv, const struct blits
 ncplane* ncvisual_render(notcurses* nc, ncvisual* ncv, const struct ncvisual_options* vopts){
   const struct blitset* bset;
   int leny, lenx;
-  if(ncvisual_blitset_geom(nc, ncv, vopts, NULL, NULL, NULL, NULL,
+  if(ncvisual_blitset_geom(nc, &nc->tcache, ncv, vopts, NULL, NULL, NULL, NULL,
                            &leny, &lenx, &bset) < 0){
     // ncvisual_blitset_geom() emits its own diagnostics, no need for an error here
     return NULL;
@@ -884,9 +1039,11 @@ ncplane* ncvisual_render(notcurses* nc, ncvisual* ncv, const struct ncvisual_opt
   }
   if(bset->geom != NCBLIT_PIXEL){
     n = ncvisual_render_cells(nc, ncv, bset, placey, placex, begy, begx,
-                              n, scaling, vopts ? vopts->flags : 0, transcolor);
+                              leny, lenx, n, scaling,
+                              vopts ? vopts->flags : 0, transcolor);
   }else{
-    n = ncvisual_render_pixels(nc, ncv, bset, placey, placex, begy, begx, n, scaling,
+    n = ncvisual_render_pixels(nc, ncv, bset, placey, placex, begy, begx,
+                               leny, lenx, n, scaling,
                                vopts ? vopts->flags : 0, transcolor);
   }
   return n;
@@ -894,9 +1051,9 @@ ncplane* ncvisual_render(notcurses* nc, ncvisual* ncv, const struct ncvisual_opt
 
 ncvisual* ncvisual_from_plane(const ncplane* n, ncblitter_e blit, int begy, int begx,
                               int leny, int lenx){
-  uint32_t* rgba = ncplane_as_rgba(n, blit, begy, begx, leny, lenx, NULL, NULL);
+  int py, px;
+  uint32_t* rgba = ncplane_as_rgba(n, blit, begy, begx, leny, lenx, &py, &px);
 //fprintf(stderr, "snarg: %d/%d @ %d/%d (%p)\n", leny, lenx, begy, begx, rgba);
-//fprintf(stderr, "RGBA %p\n", rgba);
   if(rgba == NULL){
     return NULL;
   }
@@ -908,15 +1065,22 @@ ncvisual* ncvisual_from_plane(const ncplane* n, ncblitter_e blit, int begy, int 
   if(leny == -1){
     leny = (n->leny - begy);
   }
-  ncvisual* ncv = ncvisual_from_rgba(rgba, leny * 2, lenx * 4, lenx);
+  ncvisual* ncv = ncvisual_from_rgba(rgba, py, px * 4, px);
   free(rgba);
 //fprintf(stderr, "RETURNING %p\n", ncv);
   return ncv;
 }
 
 void ncvisual_destroy(ncvisual* ncv){
-  if(visual_implementation){
-    visual_implementation->visual_destroy(ncv);
+  if(ncv){
+    if(visual_implementation.visual_destroy == NULL){
+      if(ncv->owndata){
+        free(ncv->data);
+      }
+      free(ncv);
+    }else{
+      visual_implementation.visual_destroy(ncv);
+    }
   }
 }
 
@@ -995,86 +1159,22 @@ int ncvisual_polyfill_yx(ncvisual* n, int y, int x, uint32_t rgba){
 }
 
 bool notcurses_canopen_images(const notcurses* nc __attribute__ ((unused))){
-  if(!visual_implementation){
+  if(!visual_implementation.canopen_images){
     return false;
   }
-  return visual_implementation->canopen_images;
+  return visual_implementation.canopen_images;
 }
 
 bool notcurses_canopen_videos(const notcurses* nc __attribute__ ((unused))){
-  if(!visual_implementation){
+  if(!visual_implementation.canopen_videos){
     return false;
   }
-  return visual_implementation->canopen_videos;
-}
-
-int ncvisual_decode_loop(ncvisual* nc){
-  if(!visual_implementation){
-    return -1;
-  }
-  return visual_implementation->visual_decode_loop(nc);
-}
-
-int ncvisual_stream(notcurses* nc, ncvisual* ncv, float timescale,
-                    ncstreamcb streamer, const struct ncvisual_options* vopts,
-                    void* curry){
-  if(!visual_implementation){
-    return -1;
-  }
-  return visual_implementation->visual_stream(nc, ncv, timescale, streamer, vopts, curry);
-}
-
-char* ncvisual_subtitle(const ncvisual* ncv){
-  if(!visual_implementation){
-    return NULL;
-  }
-  return visual_implementation->visual_subtitle(ncv);
-}
-
-int ncvisual_resize(ncvisual* nc, int rows, int cols){
-  if(!visual_implementation){
-    return -1;
-  }
-  if(visual_implementation->visual_resize(nc, rows, cols)){
-    return -1;
-  }
-  return 0;
-}
-
-// Inflate each pixel of 'bmap' to 'scale'x'scale' pixels square, using the
-// same color as the original pixel.
-static inline void*
-inflate_bitmap(const uint32_t* bmap, int scale, int rows, int stride, int cols){
-  size_t size = rows * cols * scale * scale * sizeof(*bmap);
-  uint32_t* ret = malloc(size);
-  if(ret){
-    for(int y = 0 ; y < rows ; ++y){
-      const uint32_t* src = bmap + y * (stride / sizeof(*bmap));
-      for(int yi = 0 ; yi < scale ; ++yi){
-        uint32_t* dst = ret + (y * scale + yi) * cols * scale;
-        for(int x = 0 ; x < cols ; ++x){
-          for(int xi = 0 ; xi < scale ; ++xi){
-            dst[x * scale + xi] = src[x];
-          }
-        }
-      }
-    }
-  }
-  return ret;
+  return visual_implementation.canopen_videos;
 }
 
 int ncvisual_inflate(ncvisual* n, int scale){
   if(scale <= 0){
     return -1;
   }
-  void* inflaton = inflate_bitmap(n->data, scale, n->pixy, n->rowstride, n->pixx);
-  if(inflaton == NULL){
-    return -1;
-  }
-  ncvisual_set_data(n, inflaton, true);
-  n->pixy *= scale;
-  n->pixx *= scale;
-  n->rowstride = 4 * n->pixx;
-  ncvisual_details_seed(n);
-  return 0;
+  return ncvisual_resize_noninterpolative(n, n->pixy * scale, n->pixx * scale);
 }

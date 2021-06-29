@@ -1,6 +1,6 @@
 % notcurses_plane(3)
 % nick black <nickblack@linux.com>
-% v2.3.0
+% v2.3.7
 
 # NAME
 
@@ -26,6 +26,14 @@ typedef struct ncplane_options {
   uint64_t flags;   // closure over NCPLANE_OPTION_*
   int margin_b, margin_r; // bottom and right margins
 } ncplane_options;
+
+#define NCSTYLE_ITALIC    0x0020u
+#define NCSTYLE_UNDERLINE 0x0010u
+#define NCSTYLE_UNDERCURL 0x0008u
+#define NCSTYLE_BOLD      0x0004u
+#define NCSTYLE_STRUCK    0x0002u
+#define NCSTYLE_BLINK     0x0001u
+#define NCSTYLE_NONE      0
 ```
 
 **struct ncplane* ncplane_create(struct ncplane* ***n***, const ncplane_options* ***nopts***);**
@@ -104,7 +112,7 @@ typedef struct ncplane_options {
 
 **int ncplane_at_yx_cell(struct ncplane* ***n***, int ***y***, int ***x***, nccell* ***c***);**
 
-**uint32_t* ncplane_as_rgba(const struct ncplane* ***nc***, int ***begy***, int ***begx***, int ***leny***, int ***lenx***, int* ***pxdimy***, int* ***pxdimx***);**
+**uint32_t* ncplane_as_rgba(const struct ncplane* ***nc***, ncblitter_e ***blit***, int ***begy***, int ***begx***, int ***leny***, int ***lenx***, int* ***pxdimy***, int* ***pxdimx***);**
 
 **char* ncplane_contents(const struct ncplane* ***nc***, int ***begy***, int ***begx***, int ***leny***, int ***lenx***);**
 
@@ -195,6 +203,8 @@ typedef struct ncplane_options {
 **int ncplane_erase_region(struct ncplane* ***n***, int ***ystart***, int ***xstart***, int ***ylen***, int ***xlen***);**
 
 **bool ncplane_set_scrolling(struct ncplane* ***n***, bool ***scrollp***);**
+
+**bool ncplane_scrolling_p(const struct ncplane* ***n***);**
 
 **int ncplane_rotate_cw(struct ncplane* ***n***);**
 
@@ -290,7 +300,7 @@ might see changes. It is an error to merge a plane onto itself.
 homes the cursor. The base cell is preserved, as are the active attributes.
 **ncplane_erase_region** does the same for a subregion of the plane. For the
 latter, supply 0 for ***ylen*** and/or ***xlen*** to erase through that
-dimension, starting at the specified point.
+dimension, starting at the specified point. See [BUGS][] below.
 
 When a plane is resized (whether by **ncplane_resize**, **SIGWINCH**, or any
 other mechanism), a depth-first recursion is performed on its children.
@@ -363,10 +373,7 @@ plane when scrolling is enabled).
 return the size of the plane in pixels. **celldimy** and **celldimx** return
 the size of a cell in pixels (these ought be the same across planes).
 **maxbmapy** and **maxbmapx** describe the largest bitmap which can be
-displayed in the plane. This function transitively calls
-**notcurses_check_pixel_support**, possibly leading to terminal interrogation
-(see **notcurses_capabilities(3)** for why this may be undesirable). Any
-parameter (save **n**) may be **NULL**.
+displayed in the plane. Any parameter (save **n**) may be **NULL**.
 
 When a plane is blitted to using **ncvisual_render** and **NCBLIT_PIXEL** (see
 **notcurses_visual(3)**), it ceases to accept cell-based output. The sprixel
@@ -374,6 +381,16 @@ will remain associated until a new sprixel is blitted to the plane, the plane
 is resized, the plane is erased, or the plane is destroyed. The base cell of a
 sprixelated plane has no effect; if the sprixel is not even multiples of the
 cell geometry, the "excess plane" is ignored during rendering.
+
+**ncplane_at_yx** and **ncplane_at_yx_cell** retrieve the contents of the plane
+at the specified coordinate. The content is returned as it will be used during
+rendering, and thus integrates any base cell as appropriate. If called on the
+secondary columns of a wide glyph, **ncplane_at_yx** returns the EGC, and thus
+cannot be used to distinguish between primary and secondary columns.
+**ncplane_at_yx_cell**, however, preserves this information: retrieving a
+secondary column of a wide glyph with **ncplane_at_yx_cell** will fill in
+the **nccell** argument such that **nccell_extended_gcluster(3)** returns an
+empty string, and **nccell_wide_right_p(3)** returns **true**.
 
 # RETURN VALUES
 
@@ -394,10 +411,11 @@ respectively, of the pile containing their argument. **notcurses_top** and
 **notcurses_bottom** do the same for the standard pile.
 
 **ncplane_at_yx** and **ncplane_at_cursor** return a heap-allocated copy of the
-EGC at the relevant cell, or **NULL** if the cell is invalid. The caller should free
-this result. **ncplane_at_yx_cell** and **ncplane_at_cursor_cell** instead load
-these values into an **nccell**, which is invalidated if the associated plane is
-destroyed. The caller should release this **nccell** with **nccell_release**.
+EGC at the relevant cell, or **NULL** if the cell is invalid. The caller should
+free this result. **ncplane_at_yx_cell** and **ncplane_at_cursor_cell** instead
+load these values into an **nccell**, which is invalidated if the associated
+plane is destroyed. The caller should release this **nccell** with
+**nccell_release**.
 
 **ncplane_as_rgba** returns a heap-allocated array of **uint32_t** values,
 each representing a single RGBA pixel, or **NULL** on failure.
@@ -419,6 +437,18 @@ It should not be used in new code.
 **ncplane_at_yx** doesn't yet account for bitmap-based graphics (see
 **notcurses_visual**). Whatever glyph-based contents existed on the plane when
 the bitmap was blitted will continue to be returned.
+
+When the alternate screen is not used (see **notcurses_init(3)**), the contents
+of the terminal at startup remain present until obliterated on a cell-by-cell
+basis. **ncplane_erase** and **ncplane_erase_region** **cannot** be used to
+clear the terminal of startup content. If you want the screen cleared on
+startup, but do not want to use (or rely on) the alternate screen, use something
+like:
+
+```c
+ncplane_set_base(notcurses_stdplane(nc), " ", 0, 0);
+notcurses_render(nc);
+```
 
 # SEE ALSO
 
