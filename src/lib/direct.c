@@ -883,7 +883,7 @@ ncdirect* ncdirect_core_init(const char* termtype, FILE* outfp, uint64_t flags){
   if(outfp == NULL){
     outfp = stdout;
   }
-  if(flags > (NCDIRECT_OPTION_VERY_VERBOSE << 1)){ // allow them through with warning
+  if(flags > (NCDIRECT_OPTION_DRAIN_INPUT << 1)){ // allow them through with warning
     logwarn("Passed unsupported flags 0x%016jx\n", (uintmax_t)flags);
   }
   ncdirect* ret = malloc(sizeof(ncdirect));

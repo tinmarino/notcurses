@@ -1001,7 +1001,7 @@ notcurses* notcurses_core_init(const notcurses_options* opts, FILE* outfp){
     fprintf(stderr, "Provided an illegal negative margin, refusing to start\n");
     return NULL;
   }
-  if(opts->flags >= (NCOPTION_NO_FONT_CHANGES << 1u)){
+  if(opts->flags >= (NCOPTION_DRAIN_INPUT << 1u)){
     fprintf(stderr, "Warning: unknown Notcurses options %016" PRIu64 "\n", opts->flags);
   }
   notcurses* ret = malloc(sizeof(*ret));
