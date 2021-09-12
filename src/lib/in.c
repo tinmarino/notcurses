@@ -223,13 +223,7 @@ uint32_t notcurses_get(notcurses* nc, const struct timespec* ts, ncinput* ni){
   return -1;
 }
 
-uint32_t notcurses_getc(notcurses* nc, const struct timespec* ts,
-                        const void* unused, ncinput* ni){
-  (void)unused; // FIXME remove for abi3
-  return notcurses_get(nc, ts, ni);
-}
-
-uint32_t ncdirect_get(struct ncdirect* n, const struct timespec* ts, ncinput* ni){
+uint32_t ncdirect_get(ncdirect* n, const struct timespec* ts, ncinput* ni){
   /*
   uint32_t r = ncinputlayer_prestamp(&n->tcache, ts, ni, 0, 0);
   if(r != (uint32_t)-1){
@@ -243,9 +237,14 @@ uint32_t ncdirect_get(struct ncdirect* n, const struct timespec* ts, ncinput* ni
   return -1;
 }
 
+uint32_t notcurses_getc(notcurses* nc, const struct timespec* ts,
+                        const void* unused, ncinput* ni){
+  (void)unused; // FIXME remove for abi3
+  return notcurses_get(nc, ts, ni);
+}
+
 uint32_t ncdirect_getc(ncdirect* nc, const struct timespec *ts,
                        const void* unused, ncinput* ni){
   (void)unused; // FIXME remove for abi3
   return ncdirect_get(nc, ts, ni);
 }
-
